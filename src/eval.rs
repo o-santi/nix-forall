@@ -85,6 +85,18 @@ impl Drop for RawValue {
   }
 }
 
+
+
+impl Clone for RawValue {
+  fn clone(&self) -> Self {
+    unsafe {
+      nix_gc_incref(self._state.store.ctx._ctx.as_ptr(), self._state._eval_state.as_ptr() as *const c_void);
+    }
+    RawValue { _state: self._state.clone(), value: self.value.clone()  }
+  }
+}
+
+
 impl Clone for NixEvalState {
   fn clone(&self) -> Self {
     unsafe {
