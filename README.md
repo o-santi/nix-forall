@@ -20,6 +20,4 @@ and when run, it should give you the following output.
 {"out": "/nix/store/bw9z0jxp5qcm7jfp4vr6ci9qynjyaaip-hello-2.12.1"}
 ```
 
-```
-nix 
-```
+Behind the curtains, it uses Nix's C API, in order to provide fast and seamless integration betweens the two languages.
