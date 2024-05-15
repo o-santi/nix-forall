@@ -53,7 +53,11 @@
           };
         };
       };
-    in {
+    in rec {
+      apps.default = {
+        type = "app";
+        program = "${packages.default}/bin/nix_in_rust";
+      };
       packages = {
         inherit (ws.release) nix-in-rust;
         default = ws.dev.nix-in-rust.bin; # release is segfaulting for some reason
