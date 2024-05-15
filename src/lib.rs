@@ -5,4 +5,4 @@ pub mod error;
 mod bindings;
 mod utils;
 
-pub use utils::get_nix_version;
+pub use utils::{get_nix_version, eval};

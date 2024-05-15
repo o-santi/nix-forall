@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ffi::{c_char, c_void, CStr}};
 
-use crate::bindings::nix_version_get;
+use crate::{bindings::nix_version_get, eval::NixEvalState, store::{NixContext, NixStore}, term::NixTerm};
 
 pub fn get_nix_version() -> String {
   unsafe {
@@ -30,4 +30,12 @@ pub extern "C" fn read_into_hashmap(map: *mut c_void, outname: *const c_char, ou
   let key = unsafe { CStr::from_ptr(outname)}.to_str().expect("nix key should be valid string");
   let path = unsafe { CStr::from_ptr(out)}.to_str().expect("nix path should be valid string");
   map.insert(key.to_string(), path.to_string());
+}
+
+
+pub fn eval(str: &str) -> anyhow::Result<NixTerm> {
+  let context = NixContext::default();
+  let store = NixStore::new(context, "");
+  let mut state = NixEvalState::new(store);
+  state.eval_from_string(str)
 }

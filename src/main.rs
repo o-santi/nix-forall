@@ -1,13 +1,7 @@
-use nix_in_rust::{store::{NixStore, NixContext}, eval::NixEvalState};
-use anyhow::Result;
+use nix_in_rust::eval;
 
-pub fn main() -> Result<()> {
-  let context = NixContext::default();
-  let store = NixStore::new(context, "");
-  let mut state = NixEvalState::new(store);
-  let nixpkgs = state.eval_from_string("
-    import <nixpkgs> {}
-  ")?;
+pub fn main() -> anyhow::Result<()> {
+  let nixpkgs = eval("import <nixpkgs> {}")?;
   let drv = nixpkgs
     .get("hello")?;
   let outputs = drv.build()?;
