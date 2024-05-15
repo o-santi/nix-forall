@@ -3,10 +3,11 @@ use std::collections::HashMap;
 use std::ffi::{c_char, c_uint, c_void, CStr, CString};
 use std::ptr::NonNull;
 use std::path::PathBuf;
-use crate::bindings::{nix_get_attr_byidx, nix_get_attr_byname, nix_get_attrs_size, nix_get_bool, nix_get_float, nix_get_int, nix_get_list_byidx, nix_get_list_size, nix_get_path_string, nix_get_string, nix_get_type, nix_init_bool, nix_init_float, nix_init_int, nix_init_null, nix_init_path_string, nix_init_string, nix_value_call, ValueType_NIX_TYPE_ATTRS, ValueType_NIX_TYPE_BOOL, ValueType_NIX_TYPE_EXTERNAL, ValueType_NIX_TYPE_FLOAT, ValueType_NIX_TYPE_FUNCTION, ValueType_NIX_TYPE_INT, ValueType_NIX_TYPE_LIST, ValueType_NIX_TYPE_NULL, ValueType_NIX_TYPE_PATH, ValueType_NIX_TYPE_STRING, ValueType_NIX_TYPE_THUNK
+use crate::bindings::{nix_bindings_builder_insert, nix_get_attr_byidx, nix_get_attr_byname, nix_get_attrs_size, nix_get_bool, nix_get_float, nix_get_int, nix_get_list_byidx, nix_get_list_size, nix_get_path_string, nix_get_string, nix_get_type, nix_init_bool, nix_init_float, nix_init_int, nix_init_null, nix_init_path_string, nix_init_string, nix_list_builder_insert, nix_make_attrs, nix_make_bindings_builder, nix_make_list, nix_make_list_builder, nix_value_call, ValueType_NIX_TYPE_ATTRS, ValueType_NIX_TYPE_BOOL, ValueType_NIX_TYPE_EXTERNAL, ValueType_NIX_TYPE_FLOAT, ValueType_NIX_TYPE_FUNCTION, ValueType_NIX_TYPE_INT, ValueType_NIX_TYPE_LIST, ValueType_NIX_TYPE_NULL, ValueType_NIX_TYPE_PATH, ValueType_NIX_TYPE_STRING, ValueType_NIX_TYPE_THUNK
 };
 use crate::error::NixError;
 use crate::eval::{NixEvalState, RawValue};
+use crate::store::{NixContext, NixStore};
 use crate::utils::callback_get_vec_u8;
 use thiserror::Error;
 
@@ -198,7 +199,7 @@ impl NixTerm {
       Err(NixEvalError::CannotIter { term_type: self.get_typename() })
     } 
   }
-  pub fn to_raw_value(self, _state: NixEvalState) -> RawValue {
+  pub fn to_raw_value(self, _state: &NixEvalState) -> RawValue {
     let ctx = _state.store.ctx._ctx.as_ptr();
     let state = _state._eval_state.as_ptr();
     let mut rawval = RawValue::empty(_state.clone());
@@ -244,7 +245,7 @@ impl NixTerm {
     if let NixTerm::Function(func) = self {
       let ctx = func._state.store.ctx._ctx.as_ptr();
       let state = func._state._eval_state.as_ptr();
-      let arg = arg.into().to_raw_value(func._state.clone());
+      let arg = arg.into().to_raw_value(&func._state);
       let ret = RawValue::empty(func._state.clone());
       unsafe {
         nix_value_call(ctx, state, func.value.as_ptr(), arg.value.as_ptr(), ret.value.as_ptr());
@@ -328,27 +329,70 @@ impl Iterator for NixAttrSetIterator {
   }
 }
 
-impl Into<NixTerm> for &str {
-  fn into(self) -> NixTerm {
-    NixTerm::String(self.to_string())
+impl From<&str> for NixTerm {
+  fn from(val: &str) -> Self {
+    NixTerm::String(val.to_string())
   }
 }
 
-impl Into<NixTerm> for i64 {
-  fn into(self) -> NixTerm {
-    NixTerm::Int(self)
+impl From<i64> for NixTerm {
+  fn from(val: i64) -> Self {
+    NixTerm::Int(val)
   }
 }
 
-impl Into<NixTerm> for PathBuf {
-  fn into(self) -> NixTerm {
-    NixTerm::Path(self)
+impl From<PathBuf> for NixTerm {
+  fn from(val: PathBuf) -> Self {
+    NixTerm::Path(val)
   }
 }
 
-impl Into<NixTerm> for bool {
-  fn into(self) -> NixTerm {
-    NixTerm::Bool(self)
+impl From<bool> for NixTerm {
+  fn from(val: bool) -> Self {
+    NixTerm::Bool(val)
+  }
+}
+
+impl<T: Into<NixTerm>> From<Vec<T>> for NixTerm {
+  fn from(val: Vec<T>) -> Self {
+    let context = NixContext::default();
+    let store = NixStore::new(context, "");
+    let state = NixEvalState::new(store);
+    let ctx = state.store.ctx._ctx.as_ptr();
+    let list_builder = unsafe {
+      nix_make_list_builder(ctx, state._eval_state.as_ptr(), val.len())
+    };
+    for (idx, elem) in val.into_iter().enumerate() {
+      let value = Into::<NixTerm>::into(elem).to_raw_value(&state);
+      unsafe {
+        nix_list_builder_insert(ctx, list_builder, idx as c_uint, value.value.as_ptr());
+      }
+    }
+    let value = RawValue::empty(state);
+    unsafe { nix_make_list(ctx, list_builder, value.value.as_ptr()) };
+    value.into()
+  }
+}
+
+impl<T: Into<NixTerm>> From<HashMap<&str, T>> for NixTerm {
+  fn from(val: HashMap<&str, T>) -> Self {
+    let context = NixContext::default();
+    let store = NixStore::new(context, "");
+    let state = NixEvalState::new(store);
+    let ctx = state.store.ctx._ctx.as_ptr();
+    let bindings_builder = unsafe {
+      nix_make_bindings_builder(ctx, state._eval_state.as_ptr(), val.len())
+    };
+    for (key, val) in val.into_iter() {
+      let value = Into::<NixTerm>::into(val).to_raw_value(&state);
+      let name = CString::new(key).expect("Key must be valid C string");
+      unsafe {
+        nix_bindings_builder_insert(ctx, bindings_builder, name.as_ptr(), value.value.as_ptr());
+      }
+    }
+    let value = RawValue::empty(state);
+    unsafe { nix_make_attrs(ctx, value.value.as_ptr(), bindings_builder) };
+    value.into()
   }
 }
 
@@ -357,4 +401,3 @@ impl From<NixError> for NixEvalError {
     NixEvalError::RuntimeError(val)
   }
 }
-
