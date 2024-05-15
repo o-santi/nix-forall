@@ -32,8 +32,7 @@ pub extern "C" fn read_into_hashmap(map: *mut c_void, outname: *const c_char, ou
   map.insert(key.to_string(), path.to_string());
 }
 
-
-pub fn eval(str: &str) -> anyhow::Result<NixTerm> {
+pub fn eval_from_str(str: &str) -> anyhow::Result<NixTerm> {
   let context = NixContext::default();
   let store = NixStore::new(context, "");
   let mut state = NixEvalState::new(store);
