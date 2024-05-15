@@ -14,7 +14,7 @@ pub fn main() -> anyhow::Result<()> {
   Ok(())
 }
 ```
-and when run, it should give you the following output.
+and when ran, it should give you the following output.
 ```
 > nix run
 {"out": "/nix/store/bw9z0jxp5qcm7jfp4vr6ci9qynjyaaip-hello-2.12.1"}
