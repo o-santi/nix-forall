@@ -1,11 +1,12 @@
 use crate::bindings::{nix_alloc_value, nix_expr_eval_from_string, nix_gc_decref, nix_gc_incref, nix_libexpr_init, nix_state_create, nix_state_free, EvalState, Value, NIX_OK};
 use crate::error::handle_nix_error;
 use crate::store::NixStore;
+use crate::term::NixTerm;
 use std::ptr::NonNull;
 use std::ffi::{c_void, CString};
 use anyhow::Result;
 
-pub struct RawValue {
+pub struct RawValue {           
   pub(crate) _state: NixEvalState,
   pub(crate) value: NonNull<Value>
 }
@@ -45,7 +46,7 @@ impl NixEvalState {
     NixEvalState { store, _eval_state }
   }
 
-  pub fn eval_from_string(&mut self, expr: &str) -> Result<RawValue> {
+  pub fn eval_from_string(&mut self, expr: &str) -> Result<NixTerm> {
     let cstr = CString::new(expr)?;
     let current_dir = std::env::current_dir()?.as_path()
       .to_str()
@@ -61,9 +62,9 @@ impl NixEvalState {
         current_dir.as_ptr(),
         val.value.as_ptr());
       if result as u32 == NIX_OK {
-        Ok(val)
+        Ok(val.into())
       } else {
-        Err(anyhow::anyhow!(handle_nix_error(result, &self)))
+        anyhow::bail!(handle_nix_error(result, &self.store.ctx))
       }
     }
   }

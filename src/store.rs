@@ -1,6 +1,9 @@
-use crate::{callback_get_vec_u8, get_string_callback};
-use crate::bindings::{nix_c_context, nix_c_context_create, nix_c_context_free, nix_gc_decref, nix_gc_incref, nix_libstore_init, nix_libutil_init, nix_store_free, nix_store_get_version, nix_store_open, Store, NIX_OK};
-use std::ffi::{CString, c_void};
+use crate::error::{handle_nix_error, NixError};
+use crate::term::NixEvalError;
+use crate::utils::{callback_get_vec_u8, read_into_hashmap};
+use crate::bindings::{nix_c_context, nix_c_context_create, nix_err_code, nix_gc_decref, nix_gc_incref, nix_libstore_init, nix_libutil_init, nix_store_get_version, nix_store_open, nix_store_parse_path, nix_store_realise, Store, StorePath, NIX_OK};
+use std::collections::HashMap;
+use std::ffi::{c_void, CString};
 use std::ptr::NonNull;
 use anyhow::Result;
 
@@ -19,6 +22,18 @@ impl Default for NixContext {
     };
     NixContext { _ctx  }
   }
+
+}
+
+impl NixContext {
+  pub fn check_call(&self) -> std::result::Result<(), NixError> {
+    let err = unsafe { nix_err_code(self._ctx.as_ptr())};
+    if err as u32 != NIX_OK {
+      Err(handle_nix_error(err, self))
+    } else {
+      Ok(())
+    }
+  } 
 }
 
 pub struct NixStore {
@@ -52,6 +67,32 @@ impl NixStore {
       }
     }
   }
+
+  fn parse_path(&self, path: &str) -> Result<NonNull<StorePath>, NixEvalError> {
+    let c_path = CString::new(path).expect("nix path is not a valid c string");
+    let path = unsafe {
+      nix_store_parse_path(self.ctx._ctx.as_ptr(), self._store.as_ptr(), c_path.as_ptr())
+    };
+    self.ctx.check_call()?;
+    Ok(NonNull::new(path)
+      .expect("nix_store_parse_path returned null"))
+  }
+  
+  pub fn build(&self, path: &str) -> Result<HashMap<String, String>, NixEvalError> {
+    let path = self.parse_path(path)?;
+    let mut map = HashMap::new();
+    unsafe {
+      nix_store_realise(
+        self.ctx._ctx.as_ptr(),
+        self._store.as_ptr(),
+        path.as_ptr(),
+        &mut map as *mut HashMap<String, String> as *mut c_void,
+        Some(read_into_hashmap)
+      );
+    }
+    self.ctx.check_call()?;
+    Ok(map)
+  }
 }
 
 impl Drop for NixStore {
@@ -70,4 +111,3 @@ impl Clone for NixStore {
     NixStore { _store: self._store.clone(), ctx: self.ctx.clone() }
   }
 }
-

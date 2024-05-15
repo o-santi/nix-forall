@@ -56,7 +56,7 @@
     in {
       packages = {
         inherit (ws.release) nix-in-rust;
-        default = ws.release.nix-in-rust.bin;
+        default = ws.dev.nix-in-rust.bin; # release is segfaulting for some reason
       };
       devShells.default = with pkgs; 
         let libclang = llvmPackages_18.libclang.lib; in
