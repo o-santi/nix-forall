@@ -1,0 +1,26 @@
+* Nix in Rust
+
+Use [[https://nixos.org/][nix]] values from Rust, as if they were native, and vice-versa. This crate offers a powerful way to interoperate with Nix values as idiomatic as possible, through the recently added [[https://github.com/NixOS/nix/pull/8699][Nix C-Api]]:
+#+begin_src rust
+use nix_in_rust::{eval_from_str, term::AttrSet};
+
+pub fn main() -> anyhow::Result<()> {
+  let pkgs = eval_from_str("import <nixpkgs>")?
+    .call_with(AttrSet::default())?;
+  let valid_pkgs = pkgs.items()?
+    .filter_map(|(name, term)| term.ok().map(|t| (name, t)))
+    .count();
+  println!("{valid_pkgs}");
+  Ok(())
+}
+#+end_src
+and when ran, it should give you the following output.
+
+#+begin_src sh
+$ nix run
+20716
+#+end_sh
+
+#+begin_quote
+This crate uses [[https://github.com/oxalica/nocargo][nocargo]] to build directly through nix, without the use of cargo. If you want to use cargo, you may drop in the shell (through ~nix develop~).
+#+end_quote
