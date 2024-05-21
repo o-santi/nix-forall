@@ -19,7 +19,7 @@ and when ran, it should give you the following output.
 #+begin_src sh
 $ nix run
 20716
-#+end_sh
+#+end_src
 
 #+begin_quote
 This crate uses [[https://github.com/oxalica/nocargo][nocargo]] to build directly through nix, without the use of cargo. If you want to use cargo, you may drop in the shell (through ~nix develop~).
