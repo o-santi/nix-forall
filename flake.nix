@@ -52,11 +52,11 @@
     in rec {
       apps.default = {
         type = "app";
-        program = "${packages.default}/bin/nix_in_rust";
+        program = "${packages.nix-in-rust.bin}/bin/nix_in_rust";
       };
       packages = {
         inherit (ws.release) nix-in-rust;
-        default = ws.dev.nix-in-rust.bin; # release is segfaulting for some reason
+        default = packages.nix-in-rust.bin;
       };
       devShells.default = with pkgs; 
         let libclang = llvmPackages_18.libclang.lib; in

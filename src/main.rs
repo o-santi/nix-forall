@@ -1,13 +1,10 @@
-use std::collections::HashMap;
-
-use nix_in_rust::{eval_from_str, term::NixTerm};
+use nix_in_rust::{eval_from_str, term::AttrSet};
 
 pub fn main() -> anyhow::Result<()> {
-  let drv = eval_from_str("import <nixpkgs>")?
-    .call_with(HashMap::<&str, NixTerm>::new())?
-    .get("hello")?
-    .get("outPath")?;
-  
-  println!("{drv}");
+  let pkgs = eval_from_str("import <nixpkgs>")?
+    .call_with(AttrSet::default())?;
+  let valid_pkgs = pkgs.items()?
+    .filter_map(|(name, term)| term.ok().map(|t| (name, t))).count();
+  println!("{valid_pkgs}");
   Ok(())
 }

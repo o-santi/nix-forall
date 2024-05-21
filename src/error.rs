@@ -4,19 +4,24 @@ use crate::store::NixContext;
 use std::fmt::Display;
 use std::ffi::{c_uint, c_void, CStr};
 
-#[derive(Debug)]
+
 pub struct NixError {
   code: i32,
   msg: String,
   kind: NixErrorKind
 }
 
-#[derive(Debug)]
 pub enum NixErrorKind {
   UnknownError,
   OverflowError,
   KeyError,
   GenericError { info_msg: String, name: String }
+}
+
+impl std::fmt::Debug for NixError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "\n{self}")
+  }
 }
 
 impl Display for NixError {

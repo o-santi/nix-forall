@@ -1,6 +1,6 @@
-use std::{collections::HashMap, ffi::{c_char, c_void, CStr}};
+use std::{collections::{btree_map::Values, HashMap}, ffi::{c_char, c_void, CStr}, ptr::NonNull};
 
-use crate::{bindings::nix_version_get, eval::NixEvalState, store::{NixContext, NixStore}, term::NixTerm};
+use crate::{bindings::{nix_c_context, nix_copy_value, nix_init_bool, nix_init_int, nix_value_force, nix_version_get, EvalState, Value}, eval::{NixEvalState, RawValue, StateWrapper}, store::{NixContext, NixStore}, term::{NixEvalError, NixTerm}};
 
 pub fn get_nix_version() -> String {
   unsafe {
@@ -30,6 +30,37 @@ pub extern "C" fn read_into_hashmap(map: *mut c_void, outname: *const c_char, ou
   let key = unsafe { CStr::from_ptr(outname)}.to_str().expect("nix key should be valid string");
   let path = unsafe { CStr::from_ptr(out)}.to_str().expect("nix path should be valid string");
   map.insert(key.to_string(), path.to_string());
+}
+
+pub unsafe extern "C" fn call_rust_closure<F>(
+  func: *mut c_void,
+  context: *mut nix_c_context,
+  state: *mut EvalState,
+  args: *mut *mut Value,
+  mut ret: *mut Value
+)
+where F: Fn(NixTerm) -> Result<NixTerm, NixEvalError> {
+  let closure: &Box<F> = std::mem::transmute(func);
+  let ctx = NixContext { _ctx: NonNull::new(context).expect("context should never be null") };
+  let store = NixStore::new(ctx, "");
+  let state = NonNull::new(state).expect("state should never be null");
+  let state = NixEvalState {
+    store, _eval_state: std::rc::Rc::new(StateWrapper(state)),
+  };
+  let value = {
+    nix_value_force(state.store.ctx.ptr(), state.state_ptr(), *args);
+    NonNull::new(*args).expect("Expected at least one argument")
+  };
+  state.store.ctx.check_call().unwrap();
+  let rawvalue = RawValue {
+    value,
+    _state: state.clone()
+  };
+  let argument: NixTerm = rawvalue.try_into().unwrap();
+  let func_ret: NixTerm = closure(argument).expect("Closure returned an error");
+  let rawvalue: RawValue = func_ret.to_raw_value(&state);
+  // nix_init_bool(state.store.ctx.ptr(), ret, false);
+  // ret.write_volatile(*rawvalue.value);
 }
 
 pub fn eval_from_str(str: &str) -> anyhow::Result<NixTerm> {
