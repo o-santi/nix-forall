@@ -6,6 +6,7 @@ pub fn main() -> anyhow::Result<()> {
     .items()?
     .filter_map(|(_, pkg)| pkg.ok())
     .count();
+  println!("Rejoice! You can build {pkgs} packages from nixpkgs");
   Ok(())
 }
 
