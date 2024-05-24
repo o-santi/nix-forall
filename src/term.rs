@@ -48,7 +48,7 @@ impl TryFrom<RawValue> for NixTerm {
   fn try_from(rawvalue: RawValue) -> NixResult<NixTerm> {
     let context = NixContext::default();
     let ctx = context.ptr();
-    let value = rawvalue.value.as_ptr();
+    let value = rawvalue.ptr();
     let value_type = unsafe { nix_get_type(ctx, value) };
     let res = match value_type {
       ValueType_NIX_TYPE_NULL => NixTerm::Null,
@@ -192,7 +192,7 @@ impl NixTerm {
 
   pub fn names(&self) -> NixResult<NixNamesIterator> {
     if let NixTerm::AttrSet(rawvalue) = self {
-      let len = unsafe { nix_get_attrs_size(rawvalue._state.store.ctx.ptr(), rawvalue.value.as_ptr()) };
+      let len = unsafe { nix_get_attrs_size(rawvalue._state.store.ctx.ptr(), rawvalue.ptr()) };
       let iterator = NixNamesIterator {
         val: rawvalue.clone(), len, idx: 0
       };
@@ -204,7 +204,7 @@ impl NixTerm {
   
   pub fn items(&self) -> NixResult<NixItemsIterator> {
     if let NixTerm::AttrSet(rawvalue) = self {
-      let len = unsafe { nix_get_attrs_size(rawvalue._state.store.ctx.ptr(), rawvalue.value.as_ptr()) };
+      let len = unsafe { nix_get_attrs_size(rawvalue._state.store.ctx.ptr(), rawvalue.ptr()) };
       let iterator = NixItemsIterator {
         val: rawvalue.clone(), len, idx: 0
       };
@@ -216,7 +216,7 @@ impl NixTerm {
   
   pub fn iter(&self) -> NixResult<NixListIterator> {
     if let NixTerm::List(rawvalue) = self {
-      let len = unsafe { nix_get_list_size(rawvalue._state.store.ctx.ptr(), rawvalue.value.as_ptr()) };
+      let len = unsafe { nix_get_list_size(rawvalue._state.store.ctx.ptr(), rawvalue.ptr()) };
       let iterator = NixListIterator {
         val: rawvalue.clone(), len, idx: 0
       };
@@ -230,7 +230,7 @@ impl NixTerm {
     let ctx = _state.store.ctx.ptr();
     let state = _state.state_ptr();
     let mut rawval = RawValue::empty(_state.clone());
-    let val_ptr = rawval.value.as_ptr();
+    let val_ptr = rawval.ptr();
     match self {
       NixTerm::Thunk(raw) |
       NixTerm::List(raw) |
@@ -278,7 +278,7 @@ impl NixTerm {
       let ret = RawValue::empty(func._state.clone());
       let ctx = NixContext::default();
       unsafe {
-        nix_value_call(ctx.ptr(), state, func.value.as_ptr(), arg.value.as_ptr(), ret.value.as_ptr());
+        nix_value_call(ctx.ptr(), state, func.ptr(), arg.ptr(), ret.ptr());
       }
       ctx.check_call()?;
       ret.try_into()
@@ -293,14 +293,11 @@ impl NixTerm {
       let state = &attrset._state;
       let name = CString::new(name).expect("String is not a valid C string");
       let val = unsafe {
-        nix_get_attr_byname(ctx.ptr(), attrset.value.as_ptr(), state.state_ptr(), name.as_ptr())
+        nix_get_attr_byname(ctx.ptr(), attrset.ptr(), state.state_ptr(), name.as_ptr())
       };
       ctx.check_call()?;
       let value = NonNull::new(val).expect("nix_get_attr_by_name returned null");
-      let rawvalue = RawValue {
-        value,
-        _state: attrset._state.clone()
-      };
+      let rawvalue = RawValue::from_raw(value, attrset._state.clone());
       rawvalue.try_into()
     } else {
       Err(NixEvalError::TypeError { expected: "attrset".into(), got: self.get_typename() })
@@ -359,12 +356,9 @@ impl Iterator for NixListIterator {
     if self.idx == self.len {
       return None;
     }
-    let elem = unsafe { nix_get_list_byidx(self.val._state.store.ctx.ptr(), self.val.value.as_ptr(), self.val._state.state_ptr(), self.idx as c_uint) };
+    let elem = unsafe { nix_get_list_byidx(self.val._state.store.ctx.ptr(), self.val.ptr(), self.val._state.state_ptr(), self.idx as c_uint) };
     let elem = NonNull::new(elem).expect("nix_get_list_byidx returned null");
-    let rawvalue = RawValue {
-      _state: self.val._state.clone(),
-      value: elem
-    };
+    let rawvalue = RawValue::from_raw(elem, self.val._state.clone());
     self.idx = self.idx + 1;
     Some(rawvalue.try_into())
   }
@@ -380,7 +374,7 @@ impl Iterator for NixItemsIterator {
     let mut name: *const c_char = std::ptr::null();
     let elem = unsafe { nix_get_attr_byidx(
       self.val._state.store.ctx.ptr(),
-      self.val.value.as_ptr(),
+      self.val.ptr(),
       self.val._state.state_ptr(),
       self.idx as c_uint,
       &mut name
@@ -391,10 +385,7 @@ impl Iterator for NixItemsIterator {
       return Some((name, Err(err.into())));
     };
     let elem = NonNull::new(elem).expect("nix_get_attr_byidx returned null");
-    let rawvalue = RawValue {
-      _state: self.val._state.clone(),
-      value: elem
-    };
+    let rawvalue = RawValue::from_raw( elem, self.val._state.clone());
     Some((name, rawvalue.try_into()))
   }
 }
@@ -409,7 +400,7 @@ impl Iterator for NixNamesIterator {
     let ctx = &self.val._state.store.ctx;
     let name = unsafe { nix_get_attr_name_byidx(
       ctx.ptr(),
-      self.val.value.as_ptr(),
+      self.val.ptr(),
       self.val._state.state_ptr(),
       self.idx as c_uint
     )};
@@ -461,11 +452,11 @@ impl<T: TryInto<NixTerm>> TryFrom<Vec<T>> for NixTerm
     for (idx, elem) in val.into_iter().enumerate() {
       let value = elem.try_into()?.to_raw_value(&state);
       unsafe {
-        nix_list_builder_insert(ctx, list_builder, idx as c_uint, value.value.as_ptr());
+        nix_list_builder_insert(ctx, list_builder, idx as c_uint, value.ptr());
       }
     }
     let value = RawValue::empty(state);
-    unsafe { nix_make_list(ctx, list_builder, value.value.as_ptr()) };
+    unsafe { nix_make_list(ctx, list_builder, value.ptr()) };
     value.try_into()
   }
 }
@@ -489,13 +480,13 @@ impl<'s, T: TryInto<NixTerm>> TryFrom<HashMap<&'s str, T>> for NixTerm
       let value = val.try_into()?.to_raw_value(&state);
       let name = CString::new(key).expect("Key must be valid C string");
       unsafe {
-        nix_bindings_builder_insert(ctx, bindings_builder, name.as_ptr(), value.value.as_ptr());
+        nix_bindings_builder_insert(ctx, bindings_builder, name.as_ptr(), value.ptr());
       }
       state.store.ctx.check_call().unwrap();
     }
     let ctx = NixContext::default();
     let value = RawValue::empty(state);
-    unsafe { nix_make_attrs(ctx.ptr(), value.value.as_ptr(), bindings_builder) };
+    unsafe { nix_make_attrs(ctx.ptr(), value.ptr(), bindings_builder) };
     ctx.check_call().unwrap();
     value.try_into()
   }
@@ -529,7 +520,7 @@ where F: Fn(NixTerm) -> NixResult<NixTerm>,
     let value = RawValue::empty(state);
     let tmp_ctx = NixContext::default();
     unsafe {
-      nix_init_primop(tmp_ctx.ptr(), value.value.as_ptr(), primop);
+      nix_init_primop(tmp_ctx.ptr(), value.ptr(), primop);
     };
     tmp_ctx.check_call().expect("Could not set primop");
     unsafe {

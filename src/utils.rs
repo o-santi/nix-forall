@@ -41,7 +41,7 @@ pub unsafe extern "C" fn call_rust_closure<F>(
 )
 where F: Fn(NixTerm) -> Result<NixTerm, NixEvalError> {
   let closure: &Box<F> = std::mem::transmute(func);
-  let ctx = NixContext { _ctx: NonNull::new(context).expect("context should never be null") };
+  let ctx = NixContext::default();
   let store = NixStore::new(ctx, "");
   let state = NonNull::new(state).expect("state should never be null");
   let state = NixEvalState {
@@ -52,10 +52,7 @@ where F: Fn(NixTerm) -> Result<NixTerm, NixEvalError> {
     NonNull::new(*args).expect("Expected at least one argument")
   };
   state.store.ctx.check_call().unwrap();
-  let rawvalue = RawValue {
-    value,
-    _state: state.clone()
-  };
+  let rawvalue = RawValue::from_raw(value, state.clone());
   let argument: NixTerm = rawvalue.try_into().unwrap();
   let func_ret: NixTerm = closure(argument).expect("Closure returned an error");
   let rawvalue: RawValue = func_ret.to_raw_value(&state);

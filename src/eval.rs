@@ -9,21 +9,36 @@ use std::rc::Rc;
 
 pub struct RawValue {           
   pub(crate) _state: NixEvalState,
-  pub(crate) value: NonNull<Value>
+  pub(crate) value: Rc<ValueWrapper>
 }
 
+pub(crate) struct ValueWrapper(NonNull<Value>);
+
 impl RawValue {
+
+  pub fn ptr(&self) -> *mut Value {
+    self.value.0.as_ptr()
+  }
+
+  pub(crate) fn from_raw(rawvalue: NonNull<Value>, state: NixEvalState) -> Self {
+    RawValue {
+      _state: state,
+      value: Rc::new(ValueWrapper(rawvalue))
+    }
+  }
+  
   pub fn empty(state: NixEvalState) -> Self {
     let value = unsafe {
-      nix_alloc_value(state.store.ctx._ctx.as_ptr(), state.state_ptr())
+      nix_alloc_value(state.store.ctx.ptr(), state.state_ptr())
     };
+    state.store.ctx.check_call().expect("nix_alloc_value failed");
     let value: NonNull<Value> = match NonNull::new(value) {
       Some(v) => v,
       None => panic!("nix_alloc_value returned null"),
     };
     RawValue {
       _state: state,
-      value
+      value: Rc::new(ValueWrapper(value))
     }
   }
 }
@@ -69,7 +84,7 @@ impl NixEvalState {
         self.state_ptr(),
         cstr.as_ptr(),
         current_dir.as_ptr(),
-        val.value.as_ptr());
+        val.ptr());
       if result as u32 == NIX_OK {
         val.try_into().map_err(|err: NixEvalError| anyhow::anyhow!(err))
       } else {
@@ -87,19 +102,10 @@ impl Drop for StateWrapper {
   }
 }
 
-// impl Drop for RawValue {
-//   fn drop(&mut self) {
-//     unsafe {
-//       nix_gc_decref(self._state.store.ctx._ctx.as_ptr(), self.value.as_ptr());
-//     }
-//   }
-// }
-
-
 impl Clone for RawValue {
   fn clone(&self) -> Self {
     unsafe {
-      nix_gc_incref(self._state.store.ctx._ctx.as_ptr(), self.value.as_ptr());
+      nix_gc_incref(self._state.store.ctx.ptr(), self.ptr());
     }
     RawValue { _state: self._state.clone(), value: self.value.clone()  }
   }

@@ -45,7 +45,7 @@ pub fn handle_nix_error(error: nix_err, ctx: &NixContext) -> NixError {
   let msg= unsafe {
     let mut len : c_uint = 0;
     let extra_ctx = NixContext::default();
-    let buf = nix_err_msg(extra_ctx._ctx.as_ptr(), ctx._ctx.as_ptr(), &mut len as *mut c_uint);
+    let buf = nix_err_msg(extra_ctx.ptr(), ctx.ptr(), &mut len as *mut c_uint);
     let c_str = CStr::from_ptr(buf);
     c_str.to_str().expect("Error msg is not a valid string").to_owned()
   };
@@ -57,7 +57,7 @@ pub fn handle_nix_error(error: nix_err, ctx: &NixContext) -> NixError {
       let temp_ctx = NixContext::default();
       let mut name = Vec::new();
       let result = unsafe {
-        nix_err_name(temp_ctx._ctx.as_ptr(), ctx._ctx.as_ptr(), Some(callback_get_vec_u8), &mut name as *mut Vec<u8> as *mut c_void)
+        nix_err_name(temp_ctx.ptr(), ctx.ptr(), Some(callback_get_vec_u8), &mut name as *mut Vec<u8> as *mut c_void)
       };
       if result as u32 != NIX_OK {
         panic!("Error thrown when reading error name");
@@ -65,7 +65,7 @@ pub fn handle_nix_error(error: nix_err, ctx: &NixContext) -> NixError {
       let name = String::from_utf8(name).expect("Nix should always return valid strings");
       let temp_ctx = NixContext::default();
       let mut info_msg: Vec<u8> = Vec::new();
-      let result = unsafe { nix_err_info_msg(temp_ctx._ctx.as_ptr(), ctx._ctx.as_ptr(), Some(callback_get_vec_u8), &mut info_msg as *mut Vec<u8> as *mut c_void) };
+      let result = unsafe { nix_err_info_msg(temp_ctx.ptr(), ctx.ptr(), Some(callback_get_vec_u8), &mut info_msg as *mut Vec<u8> as *mut c_void) };
       if result as u32 != NIX_OK {
         panic!("Error thrown when reading error info msg");
       }
