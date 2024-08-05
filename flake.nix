@@ -18,16 +18,15 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "flake-utils";
     };
-    nix.url = "github:nixos/nix";
   };
 
   outputs = inputs @ { nixpkgs, flake-utils, nocargo, rust-overlay, ... }:
     flake-utils.lib.eachDefaultSystem (system: let
-      nix = inputs.nix.packages.${system}.default;
       pkgs = import nixpkgs {
         overlays = [ (import rust-overlay) ];
         inherit system;
       };
+      nix = pkgs.nixVersions.nix_2_23;
       bindgen_args = with pkgs; ''
           export BINDGEN_EXTRA_CLANG_ARGS="$(< ${stdenv.cc}/nix-support/libc-crt1-cflags) \
             $(< ${stdenv.cc}/nix-support/libc-cflags) \
