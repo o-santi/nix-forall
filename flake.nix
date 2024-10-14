@@ -18,6 +18,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "flake-utils";
     };
+    nix.url = "github:nixos/nix";
   };
 
   outputs = inputs @ { nixpkgs, flake-utils, nocargo, rust-overlay, ... }:
@@ -26,7 +27,7 @@
         overlays = [ (import rust-overlay) ];
         inherit system;
       };
-      nix = pkgs.nixVersions.nix_2_23;
+      nix = inputs.nix.packages.${system};
       bindgen_args = with pkgs; ''
           export BINDGEN_EXTRA_CLANG_ARGS="$(< ${stdenv.cc}/nix-support/libc-crt1-cflags) \
             $(< ${stdenv.cc}/nix-support/libc-cflags) \
@@ -38,13 +39,13 @@
           ''; 
       ws = nocargo.lib.${system}.mkRustPackageOrWorkspace {
         src = ./.;
-        rustc = rust-overlay.packages.${system}.rust;
+        rustc = pkgs.rust-bin.stable.latest.minimal;
         buildCrateOverrides = with pkgs; let libclang = llvmPackages_18.libclang.lib; in {
-          "nix-in-rust" = old: {
+          "nix-in-rust" = old: with nix; {
             preBuild = bindgen_args;
             LIBCLANG_PATH = "${libclang}/lib";
-            buildInputs = [ libclang nix ];
-            nativeBuildInputs = [ pkg-config ];
+            buildInputs = [ libclang nix-store-c nix-expr-c nix-util-c ];
+            nativeBuildInputs = [ pkg-config nix-store-c nix-expr-c nix-util-c];
           };
         };
       };
@@ -63,7 +64,9 @@
           LIBCLANG_PATH = "${libclang}/lib";
           buildInputs = [
             pkg-config
-            nix
+            nix.nix-expr-c
+            nix.nix-store-c
+            nix.nix-util-c 
             libclang
             gdb
             (rust-bin.stable.latest.default.override {

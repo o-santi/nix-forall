@@ -1,6 +1,6 @@
-use std::{collections::{btree_map::Values, HashMap}, ffi::{c_char, c_void, CStr}, ptr::NonNull};
+use std::{collections::{btree_map::Values, HashMap}, ffi::{c_char, c_void, CStr}, path::PathBuf, ptr::NonNull};
 
-use crate::{bindings::{nix_c_context, nix_copy_value, nix_init_bool, nix_init_int, nix_value_force, nix_version_get, EvalState, Value}, eval::{NixEvalState, RawValue, StateWrapper}, store::{NixContext, NixStore}, term::{NixEvalError, NixTerm}};
+use crate::{bindings::{nix_c_context, nix_copy_value, nix_init_bool, nix_init_int, nix_value_force, nix_version_get, EvalState, Value}, eval::{NixEvalState, RawValue, StateWrapper}, store::{NixContext, NixStore}, term::{NixEvalError, NixTerm, ToNix}};
 
 pub fn get_nix_version() -> String {
   unsafe {
@@ -32,37 +32,39 @@ pub extern "C" fn read_into_hashmap(map: *mut c_void, outname: *const c_char, ou
   map.insert(key.to_string(), path.to_string());
 }
 
-pub unsafe extern "C" fn call_rust_closure<F>(
-  func: *mut c_void,
-  context: *mut nix_c_context,
-  state: *mut EvalState,
-  args: *mut *mut Value,
-  mut ret: *mut Value
-)
-where F: Fn(NixTerm) -> Result<NixTerm, NixEvalError> {
-  let closure: &Box<F> = std::mem::transmute(func);
-  let ctx = NixContext::default();
-  let store = NixStore::new(ctx, "");
-  let state = NonNull::new(state).expect("state should never be null");
-  let state = NixEvalState {
-    store, _eval_state: std::rc::Rc::new(StateWrapper(state)),
-  };
-  let value = {
-    nix_value_force(state.store.ctx.ptr(), state.state_ptr(), *args);
-    NonNull::new(*args).expect("Expected at least one argument")
-  };
-  state.store.ctx.check_call().unwrap();
-  let rawvalue = RawValue::from_raw(value, state.clone());
-  let argument: NixTerm = rawvalue.try_into().unwrap();
-  let func_ret: NixTerm = closure(argument).expect("Closure returned an error");
-  let rawvalue: RawValue = func_ret.to_raw_value(&state);
-  // nix_init_bool(state.store.ctx.ptr(), ret, false);
-  // ret.write_volatile(*rawvalue.value);
-}
+// pub unsafe extern "C" fn call_rust_closure<F>(
+//   func: *mut c_void,
+//   context: *mut nix_c_context,
+//   state: *mut EvalState,
+//   args: *mut *mut Value,
+//   mut ret: *mut Value
+// )
+// where F: Fn(NixTerm) -> Result<NixTerm, NixEvalError> {
+//   let closure: &Box<F> = std::mem::transmute(func);
+//   let ctx = NixContext { _ctx: NonNull::new(context).expect("context should never be null") };
+//   let store = NixStore::new(ctx, "");
+//   let state = NonNull::new(state).expect("state should never be null");
+//   let value = {
+//     nix_value_force(state.store.ctx.ptr(), state.state_ptr(), *args);
+//     NonNull::new(*args).expect("Expected at least one argument")
+//   };
+//   state.store.ctx.check_call().unwrap();
+//   let rawvalue = RawValue {
+//     value,
+//     _state: state.clone()
+//   };
+//   let argument: NixTerm = rawvalue.to_nix(&state).unwrap();
+//   let func_ret: NixTerm = closure(argument).expect("Closure returned an error");
+//   let rawvalue: RawValue = func_ret.to_raw_value(&state);
+//   unsafe {
+//     nix_copy_value(state.store.ctx.ptr(), ret, rawvalue.value.as_ptr());
+//   }
+//   state.store.ctx.check_call().unwrap()
+// }
 
-pub fn eval_from_str(str: &str) -> anyhow::Result<NixTerm> {
+pub fn eval_from_str(str: &str, cwd: PathBuf) -> anyhow::Result<NixTerm> {
   let context = NixContext::default();
   let store = NixStore::new(context, "");
   let mut state = NixEvalState::new(store);
-  state.eval_from_string(str)
+  state.eval_from_string(str, cwd)
 }
