@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::ffi::{c_char, c_uint, c_void, CStr, CString};
 use std::ptr::NonNull;
 use std::path::PathBuf;
-use crate::bindings::{nix_bindings_builder_free, nix_bindings_builder_insert, nix_get_attr_byidx, nix_get_attr_byname, nix_get_attr_name_byidx, nix_get_attrs_size, nix_get_bool, nix_get_float, nix_get_int, nix_get_list_byidx, nix_get_list_size, nix_get_path_string, nix_get_string, nix_get_type, nix_init_bool, nix_init_float, nix_init_int, nix_init_null, nix_init_path_string, nix_init_string, nix_list_builder_insert, nix_make_attrs, nix_make_bindings_builder, nix_make_list, nix_make_list_builder, nix_value_call, ValueType_NIX_TYPE_ATTRS, ValueType_NIX_TYPE_BOOL, ValueType_NIX_TYPE_EXTERNAL, ValueType_NIX_TYPE_FLOAT, ValueType_NIX_TYPE_FUNCTION, ValueType_NIX_TYPE_INT, ValueType_NIX_TYPE_LIST, ValueType_NIX_TYPE_NULL, ValueType_NIX_TYPE_PATH, ValueType_NIX_TYPE_STRING, ValueType_NIX_TYPE_THUNK
+use crate::bindings::{bindings_builder_free, bindings_builder_insert, get_attr_byidx, get_attr_byname, get_attr_name_byidx, get_attrs_size, get_bool, get_float, get_int, get_list_byidx, get_list_size, get_path_string, get_string, get_type, init_bool, init_float, init_int, init_null, init_path_string, init_string, list_builder_insert, make_attrs, make_bindings_builder, make_list, make_list_builder, value_call, ValueType_NIX_TYPE_ATTRS, ValueType_NIX_TYPE_BOOL, ValueType_NIX_TYPE_EXTERNAL, ValueType_NIX_TYPE_FLOAT, ValueType_NIX_TYPE_FUNCTION, ValueType_NIX_TYPE_INT, ValueType_NIX_TYPE_LIST, ValueType_NIX_TYPE_NULL, ValueType_NIX_TYPE_PATH, ValueType_NIX_TYPE_STRING, ValueType_NIX_TYPE_THUNK
 };
 use crate::error::NixError;
 use crate::eval::{NixEvalState, RawValue};
@@ -74,31 +74,31 @@ impl ToNix for RawValue {
     let context = NixContext::default();
     let ctx = context.ptr();
     let value = self.value.as_ptr();
-    let value_type = unsafe { nix_get_type(ctx, value) };
+    let value_type = unsafe { get_type(ctx, value) };
     let res = match value_type {
       ValueType_NIX_TYPE_NULL => NixTerm::Null,
       ValueType_NIX_TYPE_INT => {
-        let v = unsafe { nix_get_int(ctx, value) };
+        let v = unsafe { get_int(ctx, value) };
         NixTerm::Int(v)
       },
       ValueType_NIX_TYPE_BOOL => {
-        let b = unsafe { nix_get_bool(ctx, value) };
+        let b = unsafe { get_bool(ctx, value) };
         NixTerm::Bool(b)
       },
       ValueType_NIX_TYPE_FLOAT => {
-        let f = unsafe { nix_get_float(ctx, value) };
+        let f = unsafe { get_float(ctx, value) };
         NixTerm::Float(f)
       },
       ValueType_NIX_TYPE_STRING => {
         let mut raw_buffer: Vec<u8> = Vec::new();
         unsafe {
-          nix_get_string(ctx, value, Some(callback_get_vec_u8), &mut raw_buffer as *mut Vec<u8> as *mut c_void)
+          get_string(ctx, value, Some(callback_get_vec_u8), &mut raw_buffer as *mut Vec<u8> as *mut c_void)
         };
         let s = String::from_utf8(raw_buffer).expect("Nix string is not a valid utf8 string");
         NixTerm::String(s)
       },
       ValueType_NIX_TYPE_PATH => {
-        let path = unsafe { nix_get_path_string(ctx, value) };
+        let path = unsafe { get_path_string(ctx, value) };
         let path = unsafe { CStr::from_ptr(path) };
         let path = path.to_str().expect("Nix path must be valid string");
         let path = PathBuf::from(path);
@@ -177,10 +177,10 @@ impl NixAttrSet {
     let state = &self.0._state;
     let name = CString::new(name).expect("String is not a valid C string");
     let val = unsafe {
-      nix_get_attr_byname(ctx.ptr(), self.0.value.as_ptr(), state.state_ptr(), name.as_ptr())
+      get_attr_byname(ctx.ptr(), self.0.value.as_ptr(), state.state_ptr(), name.as_ptr())
     };
     ctx.check_call()?;
-    let value = NonNull::new(val).expect("nix_get_attr_by_name returned null");
+    let value = NonNull::new(val).expect("get_attr_by_name returned null");
     let rawvalue = RawValue {
       value,
       _state: state.clone()
@@ -189,7 +189,7 @@ impl NixAttrSet {
   }
 
   pub fn len(&self) -> NixResult<u32> {
-    let len = unsafe { nix_get_attrs_size(self.0._state.store.ctx.ptr(), self.0.value.as_ptr()) };
+    let len = unsafe { get_attrs_size(self.0._state.store.ctx.ptr(), self.0.value.as_ptr()) };
     self.0._state.store.ctx.check_call()?;
     Ok(len)
   }
@@ -216,7 +216,7 @@ impl NixFunction {
     let ret = RawValue::empty(self.0._state.clone());
     let ctx = NixContext::default();
     unsafe {
-      nix_value_call(ctx.ptr(), state, self.0.value.as_ptr(), arg.value.as_ptr(), ret.value.as_ptr());
+      value_call(ctx.ptr(), state, self.0.value.as_ptr(), arg.value.as_ptr(), ret.value.as_ptr());
     }
     ctx.check_call()?;
     ret.to_nix(&self.0._state)
@@ -225,7 +225,7 @@ impl NixFunction {
 
 impl NixList {
   pub fn len(&self) -> NixResult<u32> {
-    let len = unsafe { nix_get_list_size(self.0._state.store.ctx.ptr(), self.0.value.as_ptr()) };
+    let len = unsafe { get_list_size(self.0._state.store.ctx.ptr(), self.0.value.as_ptr()) };
     self.0._state.store.ctx.check_call()?;
     Ok(len)
   }
@@ -243,8 +243,8 @@ impl NixList {
     if idx > size -1 {
       return Err(NixEvalError::IndexOutOfBounds)
     }
-    let elem = unsafe { nix_get_list_byidx(raw._state.store.ctx.ptr(), raw.value.as_ptr(), raw._state.state_ptr(), idx as c_uint) };
-    let elem = NonNull::new(elem).expect("nix_get_list_byidx returned null");
+    let elem = unsafe { get_list_byidx(raw._state.store.ctx.ptr(), raw.value.as_ptr(), raw._state.state_ptr(), idx as c_uint) };
+    let elem = NonNull::new(elem).expect("get_list_byidx returned null");
     let rawvalue = RawValue {
       _state: raw._state.clone(),
       value: elem
@@ -335,28 +335,28 @@ impl NixTerm {
       NixTerm::AttrSet(attrset) => { rawval = attrset.0; }
       NixTerm::Function(func) => { rawval = func.0; },
       NixTerm::Null =>  unsafe {
-        nix_init_null(ctx, val_ptr);
+        init_null(ctx, val_ptr);
       }
       NixTerm::Int(i) => unsafe {
-        nix_init_int(ctx, val_ptr, i);
+        init_int(ctx, val_ptr, i);
       }
       NixTerm::Float(f) => unsafe {
-        nix_init_float(ctx, val_ptr, f);
+        init_float(ctx, val_ptr, f);
       }
       NixTerm::Bool(b) => unsafe {
-        nix_init_bool(ctx, val_ptr, b);
+        init_bool(ctx, val_ptr, b);
       }
       NixTerm::Path(p) => {
         let string = p.to_str().expect("path is not a valid string");
         let c_str = CString::new(string).expect("path is not a valid C String");
         unsafe {
-          nix_init_path_string(ctx, state, val_ptr, c_str.as_ptr());
+          init_path_string(ctx, state, val_ptr, c_str.as_ptr());
         }
       },
       NixTerm::String(s) => {
         let c_str = CString::new(s.to_owned()).expect("path is not a valid C String");
         unsafe {
-          nix_init_string(ctx, val_ptr, c_str.as_ptr());
+          init_string(ctx, val_ptr, c_str.as_ptr());
         }
       },
     };
@@ -466,7 +466,7 @@ impl Iterator for NixItemsIterator {
     }
     let raw = &self.val.0;
     let mut name: *const c_char = std::ptr::null();
-    let elem = unsafe { nix_get_attr_byidx(
+    let elem = unsafe { get_attr_byidx(
       raw._state.store.ctx.ptr(),
       raw.value.as_ptr(),
       raw._state.state_ptr(),
@@ -478,7 +478,7 @@ impl Iterator for NixItemsIterator {
     if let Err(err) = raw._state.store.ctx.check_call() {
       return Some((name, Err(err.into())));
     };
-    let elem = NonNull::new(elem).expect("nix_get_attr_byidx returned null");
+    let elem = NonNull::new(elem).expect("get_attr_byidx returned null");
     let rawvalue = RawValue {
       _state: raw._state.clone(),
       value: elem
@@ -496,7 +496,7 @@ impl Iterator for NixNamesIterator {
     }
     let raw = &self.val.0;
     let ctx = &raw._state.store.ctx;
-    let name = unsafe { nix_get_attr_name_byidx(
+    let name = unsafe { get_attr_name_byidx(
       ctx.ptr(),
       raw.value.as_ptr(),
       raw._state.state_ptr(),
@@ -537,16 +537,16 @@ impl<T: ToNix> ToNix for Vec<T> {
   fn to_nix(self, state: &NixEvalState) -> NixResult<NixTerm> {
     let ctx = state.store.ctx.ptr();
     let list_builder = unsafe {
-      nix_make_list_builder(ctx, state.state_ptr(), self.len())
+      make_list_builder(ctx, state.state_ptr(), self.len())
     };
     for (idx, elem) in self.into_iter().enumerate() {
       let value = elem.to_nix(state)?.to_raw_value(&state);
       unsafe {
-        nix_list_builder_insert(ctx, list_builder, idx as c_uint, value.value.as_ptr());
+        list_builder_insert(ctx, list_builder, idx as c_uint, value.value.as_ptr());
       }
     }
     let value = RawValue::empty(state.clone());
-    unsafe { nix_make_list(ctx, list_builder, value.value.as_ptr()) };
+    unsafe { make_list(ctx, list_builder, value.value.as_ptr()) };
     value.to_nix(state)
   }
 }
@@ -555,22 +555,22 @@ impl<S: AsRef<str>, T: ToNix> ToNix for HashMap<S, T> {
   fn to_nix(self, state: &NixEvalState) -> NixResult<NixTerm> {
     let ctx = state.store.ctx.ptr();
     let bindings_builder = unsafe {
-      nix_make_bindings_builder(ctx, state.state_ptr(), self.len())
+      make_bindings_builder(ctx, state.state_ptr(), self.len())
     };
     state.store.ctx.check_call().unwrap();
     for (key, val) in self.into_iter() {
       let name = CString::new(key.as_ref()).expect("Key must be valid C string");
       let value = val.to_nix(state)?.to_raw_value(state);
       unsafe {
-        nix_bindings_builder_insert(ctx, bindings_builder, name.as_ptr(), value.value.as_ptr());
+        bindings_builder_insert(ctx, bindings_builder, name.as_ptr(), value.value.as_ptr());
       }
       state.store.ctx.check_call().unwrap();
     }
     let ctx = NixContext::default();
     let value = RawValue::empty(state.clone());
-    unsafe { nix_make_attrs(ctx.ptr(), value.value.as_ptr(), bindings_builder) };
+    unsafe { make_attrs(ctx.ptr(), value.value.as_ptr(), bindings_builder) };
     ctx.check_call().unwrap();
-    unsafe { nix_bindings_builder_free(bindings_builder); }
+    unsafe { bindings_builder_free(bindings_builder); }
     ctx.check_call().unwrap();
     value.to_nix(state)
   }
@@ -586,7 +586,7 @@ impl<S: AsRef<str>, T: ToNix> ToNix for HashMap<S, T> {
 //     let box_closure = Box::new(Box::new(self));
 //     let ptr = Box::into_raw(box_closure);
 //     let primop = unsafe {
-//       nix_alloc_primop(context.ptr(),
+//       alloc_primop(context.ptr(),
 //         Some(call_rust_closure::<F>),
 //         1,
 //         name.as_ptr(),
@@ -599,7 +599,7 @@ impl<S: AsRef<str>, T: ToNix> ToNix for HashMap<S, T> {
 //     let value = RawValue::empty(state.clone());
 //     let tmp_ctx = NixContext::default();
 //     unsafe {
-//       nix_init_primop(tmp_ctx.ptr(), value.value.as_ptr(), primop);
+//       init_primop(tmp_ctx.ptr(), value.value.as_ptr(), primop);
 //     };
 //     tmp_ctx.check_call().expect("Could not set primop");
 //     value.to_nix(state)

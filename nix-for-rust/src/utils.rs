@@ -1,10 +1,10 @@
 use std::{collections::HashMap, ffi::{c_char, c_void, CStr}, path::PathBuf, ptr::NonNull};
 
-use crate::{bindings::{nix_c_context, nix_copy_value, nix_init_bool, nix_init_int, nix_value_force, nix_version_get, EvalState, Value}, eval::{NixEvalState, RawValue, StateWrapper}, store::{NixContext, NixStore}, term::{NixEvalError, NixTerm, ToNix}};
+use crate::{bindings::{c_context, copy_value, init_bool, init_int, value_force, version_get, EvalState, Value}, eval::{NixEvalState, RawValue, StateWrapper}, store::{NixContext, NixStore}, term::{NixEvalError, NixTerm, ToNix}};
 
 pub fn get_nix_version() -> String {
   unsafe {
-    let version = nix_version_get();
+    let version = version_get();
     CStr::from_ptr(version)
       .to_str()
       .expect("nix version should be valid utf8")
@@ -34,7 +34,7 @@ pub extern "C" fn read_into_hashmap(map: *mut c_void, outname: *const c_char, ou
 
 // pub unsafe extern "C" fn call_rust_closure<F>(
 //   func: *mut c_void,
-//   context: *mut nix_c_context,
+//   context: *mut c_context,
 //   state: *mut EvalState,
 //   args: *mut *mut Value,
 //   mut ret: *mut Value
@@ -45,7 +45,7 @@ pub extern "C" fn read_into_hashmap(map: *mut c_void, outname: *const c_char, ou
 //   let store = NixStore::new(ctx, "");
 //   let state = NonNull::new(state).expect("state should never be null");
 //   let value = {
-//     nix_value_force(state.store.ctx.ptr(), state.state_ptr(), *args);
+//     value_force(state.store.ctx.ptr(), state.state_ptr(), *args);
 //     NonNull::new(*args).expect("Expected at least one argument")
 //   };
 //   state.store.ctx.check_call().unwrap();
@@ -57,7 +57,7 @@ pub extern "C" fn read_into_hashmap(map: *mut c_void, outname: *const c_char, ou
 //   let func_ret: NixTerm = closure(argument).expect("Closure returned an error");
 //   let rawvalue: RawValue = func_ret.to_raw_value(&state);
 //   unsafe {
-//     nix_copy_value(state.store.ctx.ptr(), ret, rawvalue.value.as_ptr());
+//     copy_value(state.store.ctx.ptr(), ret, rawvalue.value.as_ptr());
 //   }
 //   state.store.ctx.check_call().unwrap()
 // }

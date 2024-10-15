@@ -2,6 +2,14 @@ extern crate bindgen;
 use std::env;
 use std::path::PathBuf;
 
+#[derive(Debug)]
+struct StripNixPrefix {}
+impl bindgen::callbacks::ParseCallbacks for StripNixPrefix {
+    fn item_name(&self, name: &str) -> Option<String> {
+        name.strip_prefix("nix_").map(String::from)
+    }
+}
+
 fn main() {
   // Tell cargo to tell rustc to link the system bzip2
   // shared library.
@@ -14,6 +22,8 @@ fn main() {
     .clang_args(nix_expr_c.include_paths.iter().map(|path| format!("-I{}", path.to_string_lossy())))
     .clang_args(nix_store_c.include_paths.iter().map(|path| format!("-I{}", path.to_string_lossy())))
     .header("src/wrapper.h")
+    .parse_callbacks(Box::new(StripNixPrefix {}))
+    // .rustified_enum("nix_err")
     // Finish the builder and generate the bindings.
     .generate()
     // Unwrap the Result and panic on failure.

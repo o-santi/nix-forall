@@ -1,4 +1,4 @@
-use crate::bindings::{nix_alloc_value, nix_err_NIX_OK, nix_expr_eval_from_string, nix_gc_decref, nix_gc_incref, nix_state_create, nix_state_free, EvalState, Value}; 
+use crate::bindings::{alloc_value, err_NIX_OK, expr_eval_from_string, gc_decref, gc_incref, state_create, state_free, EvalState, Value}; 
 use crate::error::handle_nix_error;
 use crate::store::{NixContext, NixStore};
 use crate::term::{NixEvalError, NixTerm, ToNix};
@@ -17,11 +17,11 @@ pub struct RawValue {
 impl RawValue {
   pub fn empty(state: NixEvalState) -> Self {
     let value = unsafe {
-      nix_alloc_value(state.store.ctx._ctx.as_ptr(), state.state_ptr())
+      alloc_value(state.store.ctx._ctx.as_ptr(), state.state_ptr())
     };
     let value: NonNull<Value> = match NonNull::new(value) {
       Some(v) => v,
-      None => panic!("nix_alloc_value returned null"),
+      None => panic!("alloc_value returned null"),
     };
     RawValue {
       _state: state,
@@ -48,11 +48,11 @@ impl NixEvalState {
     let ctx = NixContext::default();
     let state = unsafe {
       let lookup_path = std::ptr::null_mut();
-      nix_state_create(ctx.ptr(), lookup_path, store.store_ptr())
+      state_create(ctx.ptr(), lookup_path, store.store_ptr())
     };
     let state = match NonNull::new(state) {
       Some(n) => n,
-      None => panic!("nix_state_create returned null"),
+      None => panic!("state_create returned null"),
     };
     NixEvalState { store, _eval_state: Rc::new(StateWrapper(state)) }
   }
@@ -66,13 +66,13 @@ impl NixEvalState {
     let current_dir = CString::new(current_dir)?;
     let val = RawValue::empty(self.clone());
     unsafe {
-      let result = nix_expr_eval_from_string(
+      let result = expr_eval_from_string(
         self.store.ctx.ptr(),
         self.state_ptr(),
         cstr.as_ptr(),
         current_dir.as_ptr(),
         val.value.as_ptr());
-      if result == nix_err_NIX_OK {
+      if result == err_NIX_OK {
         val.to_nix(self).map_err(|err: NixEvalError| anyhow::anyhow!(err))
       } else {
         anyhow::bail!(handle_nix_error(result, &self.store.ctx))
@@ -84,7 +84,7 @@ impl NixEvalState {
 impl Drop for StateWrapper {
   fn drop(&mut self) {
     unsafe {
-      nix_state_free(self.0.as_ptr());
+      state_free(self.0.as_ptr());
     }
   }
 }
@@ -92,7 +92,7 @@ impl Drop for StateWrapper {
 impl Drop for RawValue {
   fn drop(&mut self) {
     unsafe {
-      nix_gc_decref(self._state.store.ctx._ctx.as_ptr(), self.value.as_ptr() as *mut c_void);
+      gc_decref(self._state.store.ctx._ctx.as_ptr(), self.value.as_ptr() as *mut c_void);
     }
   }
 }
@@ -101,7 +101,7 @@ impl Drop for RawValue {
 impl Clone for RawValue {
   fn clone(&self) -> Self {
     unsafe {
-      nix_gc_incref(self._state.store.ctx._ctx.as_ptr(), self.value.as_ptr() as *const c_void);
+      gc_incref(self._state.store.ctx._ctx.as_ptr(), self.value.as_ptr() as *const c_void);
     }
     RawValue { _state: self._state.clone(), value: self.value.clone()  }
   }
