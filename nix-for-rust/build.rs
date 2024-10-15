@@ -23,7 +23,7 @@ fn main() {
     .clang_args(nix_store_c.include_paths.iter().map(|path| format!("-I{}", path.to_string_lossy())))
     .header("src/wrapper.h")
     .parse_callbacks(Box::new(StripNixPrefix {}))
-    // .rustified_enum("nix_err")
+    .rustified_enum("nix_err")
     // Finish the builder and generate the bindings.
     .generate()
     // Unwrap the Result and panic on failure.

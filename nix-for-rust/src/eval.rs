@@ -1,4 +1,4 @@
-use crate::bindings::{alloc_value, err_NIX_OK, expr_eval_from_string, gc_decref, gc_incref, state_create, state_free, EvalState, Value}; 
+use crate::bindings::{alloc_value, expr_eval_from_string, gc_decref, gc_incref, state_create, state_free, err, EvalState, Value}; 
 use crate::error::handle_nix_error;
 use crate::store::{NixContext, NixStore};
 use crate::term::{NixEvalError, NixTerm, ToNix};
@@ -72,7 +72,7 @@ impl NixEvalState {
         cstr.as_ptr(),
         current_dir.as_ptr(),
         val.value.as_ptr());
-      if result == err_NIX_OK {
+      if result == err::NIX_OK {
         val.to_nix(self).map_err(|err: NixEvalError| anyhow::anyhow!(err))
       } else {
         anyhow::bail!(handle_nix_error(result, &self.store.ctx))

@@ -1,12 +1,11 @@
-use crate::term::NixEvalError;
 use crate::utils::callback_get_vec_u8;
-use crate::bindings::{err_NIX_OK, err, err_info_msg, err_msg, err_name, err_NIX_ERR_KEY, err_NIX_ERR_OVERFLOW, err_NIX_ERR_NIX_ERROR, err_NIX_ERR_UNKNOWN};
+use crate::bindings::{err, err_info_msg, err_msg, err_name};
 use crate::store::NixContext;
 use std::fmt::Display;
 use std::ffi::{c_uint, c_void, CStr};
 
 pub struct NixError {
-  code: i32,
+  code: err,
   msg: String,
   kind: NixErrorKind
 }
@@ -20,7 +19,12 @@ pub enum NixErrorKind {
 
 impl std::fmt::Debug for NixError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{self}")
+    if &self.msg != "" {
+      write!(f, "({}) {self}", self.code as u32)?;
+      write!(f, ": {}", self.msg)
+    } else {
+      write!(f, "({}) {self}", self.code as u32)
+    }
   }
 }
 
@@ -50,29 +54,29 @@ pub fn handle_nix_error(error: err, ctx: &NixContext) -> NixError {
     c_str.to_str().expect("Error msg is not a valid string").to_owned()
   };
   let kind = match error {
-    err_NIX_ERR_KEY => NixErrorKind::KeyError,
-    err_NIX_ERR_OVERFLOW => NixErrorKind::OverflowError,
-    err_NIX_ERR_UNKNOWN => NixErrorKind::UnknownError,
-    err_NIX_ERR_NIX_ERROR => {
+    err::NIX_ERR_KEY => NixErrorKind::KeyError,
+    err::NIX_ERR_OVERFLOW => NixErrorKind::OverflowError,
+    err::NIX_ERR_UNKNOWN => NixErrorKind::UnknownError,
+    err::NIX_ERR_NIX_ERROR => {
       let temp_ctx = NixContext::default();
       let mut name = Vec::new();
       let result = unsafe {
         err_name(temp_ctx._ctx.as_ptr(), ctx._ctx.as_ptr(), Some(callback_get_vec_u8), &mut name as *mut Vec<u8> as *mut c_void)
       };
-      if result != err_NIX_OK {
+      if result != err::NIX_OK {
         panic!("Error thrown when reading error name");
       }
       let name = String::from_utf8(name).expect("Nix should always return valid strings");
       let temp_ctx = NixContext::default();
       let mut info_msg: Vec<u8> = Vec::new();
       let result = unsafe { err_info_msg(temp_ctx._ctx.as_ptr(), ctx._ctx.as_ptr(), Some(callback_get_vec_u8), &mut info_msg as *mut Vec<u8> as *mut c_void) };
-      if result != err_NIX_OK {
+      if result != err::NIX_OK {
         panic!("Error thrown when reading error info msg");
       }
       let info_msg = String::from_utf8(info_msg).expect("Nix should always return valid strings");
       NixErrorKind::GenericError { name, info_msg }
     }
-    e => panic!("Unknow error kind: {e}")
+    err::NIX_OK => panic!("no error to report."),
   };
   NixError { code: error, msg, kind }
 }
