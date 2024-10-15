@@ -1,8 +1,29 @@
-* Nix in Rust
+* Nix Forall
 
-Use [[https://nixos.org/][nix]] values from Rust, as if they were native, and vice-versa. This crate offers a powerful way to interoperate with Nix values as idiomatic as possible, through the recently added [[https://github.com/NixOS/nix/pull/8699][Nix C-Api]]:
+Nix FFI for all languages. Currently, it's very much in alpha quality, providing libraries for python and rust.
+
+** Nix For Python
+
+In order to use =nix-for-py=, you need to use the overlay exposed in the flake:
+#+begin_src nix
+pkgs = import nixpkgs {
+  overlays = [ nix-forall.overlays.${system}.default ];
+};
+#+end_src
+and then create a python instance with it:
+#+begin_src nix
+pkgs.mkShell {
+  buildInputs = [
+    (pkgs.python3.withPackages (p: [ p.nix-for-py ]))
+  ];
+};
+#+end_src
+
+** Nix For Rust
+
+Use [[https://nixos.org/][nix]] values from Rust, as if they were native, and vice-versa. This crate offers a powerful way to interoperate with Nix values as idiomatically as possible, through the recently added [[https://github.com/NixOS/nix/pull/8699][Nix C-Api]]:
 #+begin_src rust
-use nix_in_rust::{eval_from_str, term::AttrSet};
+use nix_for_rust::{eval_from_str, term::AttrSet};
 
 pub fn main() -> anyhow::Result<()> {
   let pkgs = eval_from_str("import <nixpkgs>")?

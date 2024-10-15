@@ -551,7 +551,7 @@ impl<T: ToNix> ToNix for Vec<T> {
   }
 }
 
-impl<'s, T: ToNix> ToNix for HashMap<&'s str, T> {
+impl<S: AsRef<str>, T: ToNix> ToNix for HashMap<S, T> {
   fn to_nix(self, state: &NixEvalState) -> NixResult<NixTerm> {
     let ctx = state.store.ctx.ptr();
     let bindings_builder = unsafe {
@@ -559,7 +559,7 @@ impl<'s, T: ToNix> ToNix for HashMap<&'s str, T> {
     };
     state.store.ctx.check_call().unwrap();
     for (key, val) in self.into_iter() {
-      let name = CString::new(key).expect("Key must be valid C string");
+      let name = CString::new(key.as_ref()).expect("Key must be valid C string");
       let value = val.to_nix(state)?.to_raw_value(state);
       unsafe {
         nix_bindings_builder_insert(ctx, bindings_builder, name.as_ptr(), value.value.as_ptr());

@@ -1,16 +1,3 @@
-[package]
-name = "nix-in-rust"
-version = "0.1.0"
-edition = "2021"
-build = "build.rs"
-
-# [lib]
-# crate-type = ["cdylib"]
-
-[build-dependencies]
-bindgen = "0.69.4"
-pkg-config = "0.3.30"
-
-[dependencies]
-anyhow = "1.0.83"
-thiserror = "1.0.60"
+[workspace]
+members = ["nix-for-rust", "nix-for-py"]
+resolver = "2"

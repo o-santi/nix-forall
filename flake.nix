@@ -24,7 +24,7 @@
   outputs = inputs @ { nixpkgs, flake-utils, nocargo, rust-overlay, ... }:
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = import nixpkgs {
-        overlays = [ (import rust-overlay) ];
+        overlays = [ (import rust-overlay) nix-for-py-overlay ];
         inherit system;
       };
       nix = inputs.nix.packages.${system};
@@ -36,44 +36,72 @@
             ${lib.optionalString stdenv.cc.isClang "-idirafter ${stdenv.cc.cc}/lib/clang/${lib.getVersion stdenv.cc.cc}/include"} \
             ${lib.optionalString stdenv.cc.isGNU "-isystem ${stdenv.cc.cc}/include/c++/${lib.getVersion stdenv.cc.cc} -isystem ${stdenv.cc.cc}/include/c++/${lib.getVersion stdenv.cc.cc}/${stdenv.hostPlatform.config} -idirafter ${stdenv.cc.cc}/lib/gcc/${stdenv.hostPlatform.config}/${lib.getVersion stdenv.cc.cc}/include"} \
           "
-          ''; 
-      ws = nocargo.lib.${system}.mkRustPackageOrWorkspace {
+          '';
+      libclang = pkgs.llvmPackages_18.libclang.lib;
+      make-workspace-for-python = python: nocargo.lib.${system}.mkRustPackageOrWorkspace {
         src = ./.;
         rustc = pkgs.rust-bin.stable.latest.minimal;
-        buildCrateOverrides = with pkgs; let libclang = llvmPackages_18.libclang.lib; in {
-          "nix-in-rust" = old: with nix; {
+        buildCrateOverrides = with pkgs; {
+          "pyo3-build-config 0.22.4 (registry+https://github.com/rust-lang/crates.io-index)" = old: {
+            nativeBuildInputs = [ python ];
+            propagatedBuildInputs = [ python ];
+          };
+          "nix-for-rust" = old: with nix; {
             preBuild = bindgen_args;
             LIBCLANG_PATH = "${libclang}/lib";
             buildInputs = [ libclang nix-store-c nix-expr-c nix-util-c ];
-            nativeBuildInputs = [ pkg-config nix-store-c nix-expr-c nix-util-c];
+            nativeBuildInputs = [ pkg-config nix-store-c nix-expr-c nix-util-c ];
+          };
+          "nix-for-py" = old: with nix; {
+            nativeBuildInputs = [ pkg-config nix-store-c nix-expr-c nix-util-c ];
           };
         };
       };
+      nix-for-py = { buildPythonPackage, lib, python, system, setuptools }:
+        buildPythonPackage {
+          pname = "nix_for_py";
+          version = "0.0.1";
+          pyproject = false;
+          src = (make-workspace-for-python python).release.nix-for-py;
+          doCheck = false;
+          postInstall = ''
+            mkdir -p $out/${python.sitePackages}
+            cp $src/lib/*.so $out/${python.sitePackages}/nix_for_py.so
+          '';
+        };
+      nix-for-py-overlay = self: super: {
+        pythonPackagesExtensions = super.pythonPackagesExtensions ++ [(python-final: python-prev: {
+          nix-for-py = python-final.callPackage nix-for-py {};
+        })];
+      };
+      ws = make-workspace-for-python pkgs.python312;
     in rec {
       apps.default = {
         type = "app";
-        program = "${packages.nix-in-rust.bin}/bin/nix_in_rust";
+        program = "${packages.nix-for-rust.bin}/bin/nix_for_rust";
       };
       packages = {
-        inherit (ws.release) nix-in-rust;
-        default = packages.nix-in-rust.bin;
+        inherit (ws.release) nix-for-rust nix-for-py;
+        default = packages.nix-for-rust.bin;
       };
-      devShells.default = with pkgs; 
-        let libclang = llvmPackages_18.libclang.lib; in
-        mkShell {
-          LIBCLANG_PATH = "${libclang}/lib";
-          buildInputs = [
-            pkg-config
-            nix.nix-expr-c
-            nix.nix-store-c
-            nix.nix-util-c 
-            libclang
-            gdb
-            (rust-bin.stable.latest.default.override {
-              extensions = ["rust-src" "rust-analyzer"];
-            })
-          ];
-          shellHook=bindgen_args;
-        };
+      overlays = rec {
+        default = nix-for-py-overlay;
+        inherit nix-for-py-overlay;
+      };
+      devShells.default = with pkgs; mkShell {
+        LIBCLANG_PATH = "${libclang}/lib";
+        buildInputs = [
+          (python3.withPackages (p: [ p.nix-for-py ]))
+          pkg-config
+          nix.nix-expr-c
+          nix.nix-store-c
+          nix.nix-util-c 
+          libclang
+          (rust-bin.stable.latest.default.override {
+            extensions = ["rust-src" "rust-analyzer"];
+          })
+        ];
+        shellHook=bindgen_args;
+      };
     });
 }

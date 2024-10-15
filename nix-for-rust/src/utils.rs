@@ -1,4 +1,4 @@
-use std::{collections::{btree_map::Values, HashMap}, ffi::{c_char, c_void, CStr}, path::PathBuf, ptr::NonNull};
+use std::{collections::HashMap, ffi::{c_char, c_void, CStr}, path::PathBuf, ptr::NonNull};
 
 use crate::{bindings::{nix_c_context, nix_copy_value, nix_init_bool, nix_init_int, nix_value_force, nix_version_get, EvalState, Value}, eval::{NixEvalState, RawValue, StateWrapper}, store::{NixContext, NixStore}, term::{NixEvalError, NixTerm, ToNix}};
 
