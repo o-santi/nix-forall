@@ -7,7 +7,7 @@ use attrset::PyNixAttrSet;
 use function::PyNixFunction;
 use list::PyNixList;
 use pyo3::{exceptions, prelude::*, types::{PyList, PyDict}};
-use nix_for_rust::{error::handle_nix_error, eval::NixEvalState, eval_from_str, term::{NixTerm, ToNix}};
+use nix_for_rust::{error::handle_nix_error, eval::NixEvalState, eval_from_str, term::{NixTerm, ToNix}, bindings::err};
 
 fn nix_term_to_py(py: Python, term: NixTerm) -> anyhow::Result<PyObject> {
   match term {
@@ -25,9 +25,9 @@ fn nix_term_to_py(py: Python, term: NixTerm) -> anyhow::Result<PyObject> {
       let state = rawvalue._state.state_ptr();
       let value = rawvalue.value.as_ptr();
       let ret = unsafe {
-        nix_for_rust::bindings::nix_value_force(context, state, value)
+        nix_for_rust::bindings::value_force(context, state, value)
       };
-      if ret == 0 {
+      if ret == err::NIX_OK {
         let Ok(t) = rawvalue.clone().to_nix(&rawvalue._state) else { todo!() };
         nix_term_to_py(py, t)
       } else {
@@ -89,7 +89,7 @@ mod nix_for_py {
   use super::*;
   
   #[pyfunction]
-  pub fn import_file(py: Python, file: PathBuf) -> anyhow::Result<PyObject> {
+  pub fn eval_file(py: Python, file: PathBuf) -> anyhow::Result<PyObject> {
     let contents = std::fs::read_to_string(&file)?;
     let realpath = std::fs::canonicalize(file)?;
     let cwd = if realpath.is_dir() {
@@ -97,7 +97,22 @@ mod nix_for_py {
     } else {
       realpath.parent().map(|p| p.to_path_buf()).unwrap_or(realpath)
     };
-    let term = eval_from_str(&contents, cwd)?;
+    let term = eval_from_str(&contents, cwd, [])?;
+    nix_term_to_py(py, term)
+  }
+
+  #[pyfunction]
+  pub fn load_flake(py: Python, path: &str) -> anyhow::Result<PyObject> {
+    let contents = format!("builtins.getFlake \"{path}\"");
+    let realpath = {
+      let path = std::path::Path::new(path);
+      if path.exists() {
+        std::fs::canonicalize(path)?
+      } else {
+        std::env::current_dir()?
+      }
+    };
+    let term = eval_from_str(&contents, realpath, [("experimental-features", "flakes")])?;
     nix_term_to_py(py, term)
   }
 }

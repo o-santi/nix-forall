@@ -1,7 +1,7 @@
 use crate::error::{handle_nix_error, NixError};
 use crate::term::NixEvalError;
 use crate::utils::{callback_get_vec_u8, read_into_hashmap};
-use crate::bindings::{c_context, c_context_create, err_code, libexpr_init, libstore_init, libutil_init, store_free, store_get_version, store_open, store_parse_path, store_realise, Store, StorePath, err};
+use crate::bindings::{c_context, c_context_create, err, err_code, libexpr_init, libstore_init, libstore_init_no_load_config, libutil_init, store_free, store_get_version, store_open, store_parse_path, store_realise, Store, StorePath};
 use std::collections::HashMap;
 use std::ffi::{c_void, CString};
 use std::os::raw::c_char;
@@ -20,7 +20,7 @@ impl Default for NixContext {
     unsafe {
       libutil_init(_ctx);
       libexpr_init(_ctx);
-      libstore_init(_ctx);
+      libstore_init_no_load_config(_ctx);
     };
     let _ctx = match NonNull::new(_ctx) {
       Some(c) => c,
@@ -61,17 +61,31 @@ impl NixStore {
     self._store.0.as_ptr()
   }
   
-  pub fn new(ctx: NixContext, uri: &str) -> Self {
-    let uri = CString::new(uri).expect("Invalid C-String");
-    let _store = unsafe {
-      let params: *mut *mut *const c_char = [null_mut() as *mut *const c_char].as_mut_ptr();
-      store_open(ctx._ctx.as_ptr(), uri.into_raw(), params)
+  pub fn new<S: Into<Vec<u8>>, I: IntoIterator<Item=(S, S)>>(ctx: NixContext, uri: &str, extra_params: I) -> Result<Self> {
+    let uri = CString::new(uri)?;
+    let _store = {
+      let params: Vec<(CString, CString)> = extra_params
+        .into_iter()
+        .map(|(k, v)| Ok((CString::new(k)?, CString::new(v)?)))
+        .collect::<Result<_>>()?;
+      let mut params: Vec<[*const c_char; 2]> = params
+        .iter()
+        .map(|(k, v)| [k.as_ptr(), v.as_ptr()])
+        .collect();
+      let mut params: Vec<*mut *const c_char> = params
+        .iter_mut()
+        .map(|p| p.as_mut_ptr())
+        .chain(std::iter::once(null_mut()))
+        .collect();
+      unsafe {
+        store_open(ctx._ctx.as_ptr(), uri.into_raw(), params.as_mut_ptr())
+      }
     };
     let store = match NonNull::new(_store) {
       Some(s) => s,
       None => panic!("store_open returned null")
     };
-    NixStore { ctx, _store: Rc::new(StoreWrapper(store)) }
+    Ok(NixStore { ctx, _store: Rc::new(StoreWrapper(store)) })
   }
   
   pub fn version(&self) -> Result<String> {

@@ -61,10 +61,3 @@ pub extern "C" fn read_into_hashmap(map: *mut c_void, outname: *const c_char, ou
 //   }
 //   state.store.ctx.check_call().unwrap()
 // }
-
-pub fn eval_from_str(str: &str, cwd: PathBuf) -> anyhow::Result<NixTerm> {
-  let context = NixContext::default();
-  let store = NixStore::new(context, "");
-  let mut state = NixEvalState::new(store);
-  state.eval_from_string(str, cwd)
-}

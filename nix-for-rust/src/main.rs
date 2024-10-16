@@ -1,12 +1,16 @@
-use nix_for_rust::{eval_from_str, term::AttrSet};
+use nix_for_rust::{settings::NixSettings, term::{AttrSet, Repr}};
 
 pub fn main() -> anyhow::Result<()> {
-  let pkgs = eval_from_str("import <nixpkgs>", std::env::current_dir()?)?
-    .call_with(AttrSet::default())?
-    .items()?
-    .filter_map(|(_, pkg)| pkg.ok())
-    .count();
-  println!("Rejoice! You can build {pkgs} packages from nixpkgs");
+  let mut state = NixSettings::default_conf()?
+    .with_setting("experimental-features", "flakes")
+    .with_default_store()?;
+  // let pkgs = state.eval_from_string("import <nixpkgs>", std::env::current_dir()?)?
+  //   .call_with(AttrSet::default())?
+  //   .items()?
+  //   .filter_map(|(_, pkg)| pkg.ok())
+  //   .count();
+  let pkgs = state.eval_from_string("builtins.toJSON builtins.nixPath", std::env::current_dir()?)?;
+  println!("{}", pkgs.repr()?);
   Ok(())
 }
 

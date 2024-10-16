@@ -3,17 +3,24 @@ use crate::bindings::{err, err_info_msg, err_msg, err_name};
 use crate::store::NixContext;
 use std::fmt::Display;
 use std::ffi::{c_uint, c_void, CStr};
+use thiserror::Error;
 
+#[derive(Error)]
 pub struct NixError {
   code: err,
   msg: String,
   kind: NixErrorKind
 }
 
+#[derive(Debug, Error)]
 pub enum NixErrorKind {
+  #[error("Unknown error")]
   UnknownError,
+  #[error("An overflow has occured")]
   OverflowError,
+  #[error("Key does not exist")]
   KeyError,
+  #[error("{name}: {info_msg}")]
   GenericError { info_msg: String, name: String }
 }
 
@@ -31,17 +38,6 @@ impl std::fmt::Debug for NixError {
 impl Display for NixError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "{}", self.kind)
-  }
-}
-
-impl Display for NixErrorKind {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      NixErrorKind::UnknownError => write!(f, "Unknown error"),
-      NixErrorKind::OverflowError => write!(f, "An overflow has occured"),
-      NixErrorKind::KeyError => write!(f, "Key does not exist"),
-      NixErrorKind::GenericError { info_msg, name } => write!(f, "{name}: {info_msg}"),
-    }
   }
 }
 
