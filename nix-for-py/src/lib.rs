@@ -2,7 +2,7 @@ mod attrset;
 mod list;
 mod function;
 
-use std::{collections::HashMap, path::PathBuf, sync::{Arc, Mutex}};
+use std::{collections::HashMap, path::{PathBuf, Path}, sync::{Arc, Mutex}};
 use attrset::PyNixAttrSet;
 use function::PyNixFunction;
 use list::PyNixList;
@@ -86,31 +86,17 @@ mod nix_for_py {
   
   #[pyfunction]
   pub fn eval_file(py: Python, file: PathBuf) -> anyhow::Result<PyObject> {
-    let contents = std::fs::read_to_string(&file)?;
-    let realpath = std::fs::canonicalize(file)?;
-    let cwd = if realpath.is_dir() {
-      realpath
-    } else {
-      realpath.parent().map(|p| p.to_path_buf()).unwrap_or(realpath)
-    };
-    let mut state = NixSettings::empty().with_default_store()?;
-    let term = state.eval_from_string(&contents, cwd)?;
+    let mut state = NixSettings::default().with_default_store()?;
+    let term = state.eval_file(&file)?;
     nix_term_to_py(py, term)
   }
 
   #[pyfunction]
-  pub fn load_flake(py: Python, path: &str) -> anyhow::Result<PyObject> {
-    let contents = format!("builtins.getFlake \"{path}\"");
-    let realpath = {
-      let path = std::path::Path::new(path);
-      if path.exists() {
-        std::fs::canonicalize(path)?
-      } else {
-        std::env::current_dir()?
-      }
-    };
-    let mut state = NixSettings::empty().with_default_store()?;
-    let term = state.eval_from_string(&contents, realpath)?;
+  pub fn load_flake(py: Python, flake_path: &str) -> anyhow::Result<PyObject> {
+    let mut state = NixSettings::default()
+      .with_setting("extra-experimental-features", "flakes")
+      .with_default_store()?;
+    let term = state.eval_flake(&flake_path)?;
     nix_term_to_py(py, term)
   }
 }

@@ -66,7 +66,7 @@ impl NixEvalState {
     Ok(NixEvalState { store, _eval_state: Rc::new(StateWrapper(state)) })
   }
 
-  pub fn eval_from_string(&mut self, expr: &str, cwd: PathBuf) -> Result<NixTerm> {
+  pub fn eval_string(&mut self, expr: &str, cwd: PathBuf) -> Result<NixTerm> {
     let cstr = CString::new(expr)?;
     let current_dir = cwd.as_path()
       .to_str()
@@ -85,6 +85,36 @@ impl NixEvalState {
     self.store.ctx.check_call()?;
     val.to_nix(self).map_err(|err: NixEvalError| anyhow::anyhow!(err))
   }
+
+  pub fn eval_file(&mut self, file: &std::path::Path) -> Result<NixTerm> {
+    let contents = std::fs::read_to_string(&file)?;
+    let realpath = std::fs::canonicalize(file)?;
+    let cwd = if realpath.is_dir() {
+      realpath
+    } else {
+      realpath.parent().map(|p| p.to_path_buf()).unwrap_or(realpath)
+    };
+    self.eval_string(&contents, cwd)
+  }
+
+  pub fn eval_flake(&mut self, flake_path: &str) -> Result<NixTerm> {
+    let (flake_path, cwd) = {
+      let path= std::path::Path::new(flake_path);
+      if path.try_exists()? {
+        let canonical_path = std::fs::canonicalize(path)?;
+        (canonical_path
+          .clone()
+          .into_os_string()
+          .into_string()
+          .map_err(|_| anyhow::format_err!("Cannot convert flake path to unicode string"))?, canonical_path)
+      } else {
+        (flake_path.to_string(), std::env::current_dir()?)
+      }
+    };
+    let contents = format!("builtins.getFlake \"{flake_path}\"");
+    self.eval_string(&contents, cwd)
+  }
+  
 }
 
 impl Drop for StateWrapper {
