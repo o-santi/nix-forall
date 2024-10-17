@@ -7,7 +7,7 @@ use attrset::PyNixAttrSet;
 use function::PyNixFunction;
 use list::PyNixList;
 use pyo3::{exceptions, prelude::*, types::{PyList, PyDict}};
-use nix_for_rust::{error::handle_nix_error, eval::NixEvalState, eval_from_str, term::{NixTerm, ToNix}, bindings::err};
+use nix_for_rust::{error::handle_nix_error, eval::NixEvalState, settings::NixSettings, term::{NixTerm, ToNix}, bindings::err};
 
 fn nix_term_to_py(py: Python, term: NixTerm) -> anyhow::Result<PyObject> {
   match term {
@@ -27,13 +27,9 @@ fn nix_term_to_py(py: Python, term: NixTerm) -> anyhow::Result<PyObject> {
       let ret = unsafe {
         nix_for_rust::bindings::value_force(context, state, value)
       };
-      if ret == err::NIX_OK {
-        let Ok(t) = rawvalue.clone().to_nix(&rawvalue._state) else { todo!() };
-        nix_term_to_py(py, t)
-      } else {
-        let err = handle_nix_error(ret, &rawvalue._state.store.ctx);
-        Err(anyhow::format_err!(err))
-      }
+      rawvalue._state.store.ctx.check_call()?;
+      let t = rawvalue.clone().to_nix(&rawvalue._state)?;
+      nix_term_to_py(py, t)
     }
     NixTerm::External(_) => todo!(),
   }
@@ -97,7 +93,8 @@ mod nix_for_py {
     } else {
       realpath.parent().map(|p| p.to_path_buf()).unwrap_or(realpath)
     };
-    let term = eval_from_str(&contents, cwd, [])?;
+    let mut state = NixSettings::empty().with_default_store()?;
+    let term = state.eval_from_string(&contents, cwd)?;
     nix_term_to_py(py, term)
   }
 
@@ -112,7 +109,8 @@ mod nix_for_py {
         std::env::current_dir()?
       }
     };
-    let term = eval_from_str(&contents, realpath, [("experimental-features", "flakes")])?;
+    let mut state = NixSettings::empty().with_default_store()?;
+    let term = state.eval_from_string(&contents, realpath)?;
     nix_term_to_py(py, term)
   }
 }

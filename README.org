@@ -23,13 +23,14 @@ pkgs.mkShell {
 
 Use [[https://nixos.org/][nix]] values from Rust, as if they were native, and vice-versa. This crate offers a powerful way to interoperate with Nix values as idiomatically as possible, through the recently added [[https://github.com/NixOS/nix/pull/8699][Nix C-Api]]:
 #+begin_src rust
-use nix_for_rust::{eval_from_str, term::AttrSet};
+use nix_for_rust::{settings::NixSettings, term::AttrSet};
 
 pub fn main() -> anyhow::Result<()> {
-  let pkgs = eval_from_str("import <nixpkgs>")?
-    .call_with(AttrSet::default())?;
-  let valid_pkgs = pkgs.items()?
-    .filter_map(|(name, term)| term.ok().map(|t| (name, t)))
+  let mut state = NixSettings::empty().with_default_store()?;
+  let valid_pkgs = state.eval_from_string("import <nixpkgs>", std::env::current_dir()?)?
+    .call_with(AttrSet::default())?
+    .items()?
+    .filter_map(|(_name, term)| term.ok())
     .count();
   println!("{valid_pkgs}");
   Ok(())

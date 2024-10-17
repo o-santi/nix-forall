@@ -2,6 +2,8 @@ extern crate bindgen;
 use std::env;
 use std::path::PathBuf;
 
+use bindgen::EnumVariation;
+
 #[derive(Debug)]
 struct StripNixPrefix {}
 impl bindgen::callbacks::ParseCallbacks for StripNixPrefix {
@@ -23,7 +25,7 @@ fn main() {
     .clang_args(nix_store_c.include_paths.iter().map(|path| format!("-I{}", path.to_string_lossy())))
     .header("src/wrapper.h")
     .parse_callbacks(Box::new(StripNixPrefix {}))
-    .rustified_enum("nix_err")
+    .default_enum_style(EnumVariation::ModuleConsts)
     // Finish the builder and generate the bindings.
     .generate()
     // Unwrap the Result and panic on failure.

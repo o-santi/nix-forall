@@ -1,7 +1,7 @@
 use crate::error::{handle_nix_error, NixError};
 use crate::term::NixEvalError;
 use crate::utils::{callback_get_vec_u8, read_into_hashmap};
-use crate::bindings::{c_context, c_context_create, err, err_code, libexpr_init, libstore_init, libstore_init_no_load_config, libutil_init, store_free, store_get_version, store_open, store_parse_path, store_realise, Store, StorePath};
+use crate::bindings::{c_context, c_context_create, err, err_code, libexpr_init, libstore_init, libstore_init_no_load_config, libutil_init, store_free, store_get_version, store_open, store_parse_path, store_realise, Store, StorePath, NIX_OK};
 use std::collections::HashMap;
 use std::ffi::{c_void, CString};
 use std::os::raw::c_char;
@@ -17,11 +17,6 @@ pub struct NixContext {
 impl Default for NixContext {
   fn default() -> Self {
     let _ctx = unsafe { c_context_create() };
-    unsafe {
-      libutil_init(_ctx);
-      libexpr_init(_ctx);
-      libstore_init_no_load_config(_ctx);
-    };
     let _ctx = match NonNull::new(_ctx) {
       Some(c) => c,
       None => panic!("c_context_create returned null")
@@ -39,7 +34,7 @@ impl NixContext {
 
   pub fn check_call(&self) -> std::result::Result<(), NixError> {
     let err = unsafe { err_code(self._ctx.as_ptr())};
-    if err != err::NIX_OK {
+    if err != NIX_OK as i32 {
       Err(handle_nix_error(err, self))
     } else {
       Ok(())
@@ -92,7 +87,7 @@ impl NixStore {
     unsafe {
       let version_string : Vec<u8> = Vec::new();
       let result = store_get_version(self.ctx._ctx.as_ptr(), self.store_ptr(), Some(callback_get_vec_u8), version_string.as_ptr() as *mut c_void);
-      if result == err::NIX_OK {
+      if result == NIX_OK as i32 {
         Ok(String::from_utf8(version_string).expect("Nix returned invalid string"))
       } else {
         anyhow::bail!("Could not read version string.")

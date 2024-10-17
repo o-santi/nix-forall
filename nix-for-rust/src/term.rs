@@ -3,8 +3,7 @@ use std::collections::HashMap;
 use std::ffi::{c_char, c_uint, c_void, CStr, CString};
 use std::ptr::NonNull;
 use std::path::PathBuf;
-use crate::bindings::{bindings_builder_free, bindings_builder_insert, get_attr_byidx, get_attr_byname, get_attr_name_byidx, get_attrs_size, get_bool, get_float, get_int, get_list_byidx, get_list_size, get_path_string, get_string, get_type, init_bool, init_float, init_int, init_null, init_path_string, init_string, list_builder_insert, make_attrs, make_bindings_builder, make_list, make_list_builder, value_call, ValueType_NIX_TYPE_ATTRS, ValueType_NIX_TYPE_BOOL, ValueType_NIX_TYPE_EXTERNAL, ValueType_NIX_TYPE_FLOAT, ValueType_NIX_TYPE_FUNCTION, ValueType_NIX_TYPE_INT, ValueType_NIX_TYPE_LIST, ValueType_NIX_TYPE_NULL, ValueType_NIX_TYPE_PATH, ValueType_NIX_TYPE_STRING, ValueType_NIX_TYPE_THUNK
-};
+use crate::bindings::{bindings_builder_free, bindings_builder_insert, get_attr_byidx, get_attr_byname, get_attr_name_byidx, get_attrs_size, get_bool, get_float, get_int, get_list_byidx, get_list_size, get_path_string, get_string, get_type, init_bool, init_float, init_int, init_null, init_path_string, init_string, list_builder_insert, make_attrs, make_bindings_builder, make_list, make_list_builder, value_call, ValueType};
 use crate::error::NixError;
 use crate::eval::{NixEvalState, RawValue};
 use crate::store::NixContext;
@@ -76,20 +75,20 @@ impl ToNix for RawValue {
     let value = self.value.as_ptr();
     let value_type = unsafe { get_type(ctx, value) };
     let res = match value_type {
-      ValueType_NIX_TYPE_NULL => NixTerm::Null,
-      ValueType_NIX_TYPE_INT => {
+      ValueType::NIX_TYPE_NULL => NixTerm::Null,
+      ValueType::NIX_TYPE_INT => {
         let v = unsafe { get_int(ctx, value) };
         NixTerm::Int(v)
       },
-      ValueType_NIX_TYPE_BOOL => {
+      ValueType::NIX_TYPE_BOOL => {
         let b = unsafe { get_bool(ctx, value) };
         NixTerm::Bool(b)
       },
-      ValueType_NIX_TYPE_FLOAT => {
+      ValueType::NIX_TYPE_FLOAT => {
         let f = unsafe { get_float(ctx, value) };
         NixTerm::Float(f)
       },
-      ValueType_NIX_TYPE_STRING => {
+      ValueType::NIX_TYPE_STRING => {
         let mut raw_buffer: Vec<u8> = Vec::new();
         unsafe {
           get_string(ctx, value, Some(callback_get_vec_u8), &mut raw_buffer as *mut Vec<u8> as *mut c_void)
@@ -97,20 +96,20 @@ impl ToNix for RawValue {
         let s = String::from_utf8(raw_buffer).expect("Nix string is not a valid utf8 string");
         NixTerm::String(s)
       },
-      ValueType_NIX_TYPE_PATH => {
+      ValueType::NIX_TYPE_PATH => {
         let path = unsafe { get_path_string(ctx, value) };
         let path = unsafe { CStr::from_ptr(path) };
         let path = path.to_str().expect("Nix path must be valid string");
         let path = PathBuf::from(path);
         NixTerm::Path(path)
       },
-      ValueType_NIX_TYPE_LIST => NixTerm::List(NixList(self)),
-      ValueType_NIX_TYPE_ATTRS => NixTerm::AttrSet(NixAttrSet(self)),
-      ValueType_NIX_TYPE_EXTERNAL => todo!("Not done yet!"),
-      ValueType_NIX_TYPE_FUNCTION => {
+      ValueType::NIX_TYPE_LIST => NixTerm::List(NixList(self)),
+      ValueType::NIX_TYPE_ATTRS => NixTerm::AttrSet(NixAttrSet(self)),
+      ValueType::NIX_TYPE_EXTERNAL => todo!("Not done yet!"),
+      ValueType::NIX_TYPE_FUNCTION => {
         NixTerm::Function(NixFunction(self))
       },
-      ValueType_NIX_TYPE_THUNK => {
+      ValueType::NIX_TYPE_THUNK => {
         NixTerm::Thunk(self)
       },
       _ => panic!("Unknown value type"),

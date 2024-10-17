@@ -5,7 +5,7 @@ use crate::term::{NixEvalError, NixTerm, ToNix};
 use std::os::raw::c_void;
 use std::path::PathBuf;
 use std::ptr::NonNull;
-use std::ffi::CString;
+use std::ffi::{c_char, CString};
 use anyhow::Result;
 use std::rc::Rc;
 
@@ -44,17 +44,26 @@ impl NixEvalState {
     self._eval_state.0.as_ptr()
   }
   
-  pub fn new(store: NixStore) -> Self {
+  pub fn new<S:std::fmt::Display, P:IntoIterator<Item=(S, S)>>(store: NixStore, lookup_paths: P) -> Result<Self> {
     let ctx = NixContext::default();
+    let mut lookup_path: Vec<CString> = lookup_paths
+      .into_iter()
+      .map(|(key, val)| {
+        let string = format!("{key}={val}");
+        Ok(CString::new(string)?)
+      })
+      .collect::<Result<_>>()?;
+    let mut lookup_path: Vec<*const c_char> = lookup_path
+      .iter_mut()
+      .map(|p| p.as_ptr())
+      .chain(std::iter::once(std::ptr::null()))
+      .collect();
     let state = unsafe {
-      let lookup_path = std::ptr::null_mut();
-      state_create(ctx.ptr(), lookup_path, store.store_ptr())
+      state_create(ctx.ptr(), lookup_path.as_mut_ptr(), store.store_ptr())
     };
-    let state = match NonNull::new(state) {
-      Some(n) => n,
-      None => panic!("state_create returned null"),
-    };
-    NixEvalState { store, _eval_state: Rc::new(StateWrapper(state)) }
+    ctx.check_call()?;
+    let state = NonNull::new(state).ok_or(anyhow::format_err!("state_create return null pointer"))?;
+    Ok(NixEvalState { store, _eval_state: Rc::new(StateWrapper(state)) })
   }
 
   pub fn eval_from_string(&mut self, expr: &str, cwd: PathBuf) -> Result<NixTerm> {
@@ -66,18 +75,15 @@ impl NixEvalState {
     let current_dir = CString::new(current_dir)?;
     let val = RawValue::empty(self.clone());
     unsafe {
-      let result = expr_eval_from_string(
+      expr_eval_from_string(
         self.store.ctx.ptr(),
         self.state_ptr(),
         cstr.as_ptr(),
         current_dir.as_ptr(),
         val.value.as_ptr());
-      if result == err::NIX_OK {
-        val.to_nix(self).map_err(|err: NixEvalError| anyhow::anyhow!(err))
-      } else {
-        anyhow::bail!(handle_nix_error(result, &self.store.ctx))
-      }
     }
+    self.store.ctx.check_call()?;
+    val.to_nix(self).map_err(|err: NixEvalError| anyhow::anyhow!(err))
   }
 }
 
