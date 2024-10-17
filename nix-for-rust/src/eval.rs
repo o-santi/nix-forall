@@ -44,14 +44,11 @@ impl NixEvalState {
     self._eval_state.0.as_ptr()
   }
   
-  pub fn new<S:std::fmt::Display, P:IntoIterator<Item=(S, S)>>(store: NixStore, lookup_paths: P) -> Result<Self> {
+  pub fn new<P:IntoIterator<Item=String>>(store: NixStore, lookup_paths: P) -> Result<Self> {
     let ctx = NixContext::default();
     let mut lookup_path: Vec<CString> = lookup_paths
       .into_iter()
-      .map(|(key, val)| {
-        let string = format!("{key}={val}");
-        Ok(CString::new(string)?)
-      })
+      .map(|path| { Ok(CString::new(path)?)})
       .collect::<Result<_>>()?;
     let mut lookup_path: Vec<*const c_char> = lookup_path
       .iter_mut()

@@ -13,7 +13,7 @@ pub struct NixSettings {
   load_external_config: bool,
   settings: HashMap<String, String>,
   store_params: HashMap<String, String>,
-  lookup_path: HashMap<String, String>
+  lookup_path: Vec<String>
 }
 
 fn get_config_home() -> Result<PathBuf> {
@@ -62,8 +62,8 @@ impl NixSettings {
     self
   }
 
-  pub fn with_lookup_path(mut self, key: &str, val: &str) -> Self {
-    self.lookup_path.insert(key.to_string(), val.to_string());
+  pub fn with_lookup_path(mut self, path: &str) -> Self {
+    self.lookup_path.push(path.to_string());
     self
   }
 
