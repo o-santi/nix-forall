@@ -1,11 +1,13 @@
 mod attrset;
 mod list;
 mod function;
+mod nix_evaluator;
 
 use std::{collections::HashMap, path::{PathBuf, Path}, sync::{Arc, Mutex}};
 use attrset::PyNixAttrSet;
 use function::PyNixFunction;
 use list::PyNixList;
+use nix_evaluator::PyEvalState;
 use pyo3::{exceptions, prelude::*, types::{PyList, PyDict}};
 use nix_for_rust::{error::handle_nix_error, eval::NixEvalState, settings::NixSettings, term::{NixTerm, ToNix}, bindings::err};
 
@@ -24,7 +26,7 @@ fn nix_term_to_py(py: Python, term: NixTerm) -> anyhow::Result<PyObject> {
       let context = rawvalue._state.store.ctx.ptr();
       let state = rawvalue._state.state_ptr();
       let value = rawvalue.value.as_ptr();
-      let ret = unsafe {
+      unsafe {
         nix_for_rust::bindings::value_force(context, state, value)
       };
       rawvalue._state.store.ctx.check_call()?;
@@ -85,18 +87,35 @@ mod nix_for_py {
   use super::*;
   
   #[pyfunction]
-  pub fn eval_file(py: Python, file: PathBuf) -> anyhow::Result<PyObject> {
-    let mut state = NixSettings::default().with_default_store()?;
-    let term = state.eval_file(&file)?;
-    nix_term_to_py(py, term)
-  }
-
-  #[pyfunction]
-  pub fn load_flake(py: Python, flake_path: &str) -> anyhow::Result<PyObject> {
-    let mut state = NixSettings::default()
-      .with_setting("extra-experimental-features", "flakes")
-      .with_default_store()?;
-    let term = state.eval_flake(&flake_path)?;
-    nix_term_to_py(py, term)
+  #[pyo3(signature = (store="auto", load_external_config=false, lookup_path=None, store_params=None, settings=None))]
+  fn evaluator_with(
+    store: &str,
+    load_external_config: bool,
+    lookup_path: Option<Vec<String>>,
+    store_params: Option<HashMap<String, String>>,
+    settings: Option<HashMap<String, String>>
+  ) -> PyResult<PyEvalState> {
+    let mut nix_settings = if load_external_config {
+      NixSettings::default()
+    } else {
+      NixSettings::load_config()
+    };
+    if let Some(paths) = lookup_path {
+      for p in paths {
+        nix_settings = nix_settings.with_lookup_path(&p);
+      }
+    }
+    if let Some(params) = store_params {
+      for (key, val) in params {
+        nix_settings = nix_settings.with_store_param(&key, &val);
+      }
+    }
+    if let Some(settings) = settings {
+      for (key, val) in settings {
+        nix_settings = nix_settings.with_setting(&key, &val);
+      }
+    }
+    let eval_state = nix_settings.with_store(store)?;
+    Ok(PyEvalState(Arc::new(Mutex::new(eval_state))))
   }
 }
