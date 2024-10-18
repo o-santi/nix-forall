@@ -9,7 +9,7 @@ use function::PyNixFunction;
 use list::PyNixList;
 use nix_evaluator::PyEvalState;
 use pyo3::{exceptions, prelude::*, types::{PyList, PyDict}};
-use nix_for_rust::{error::handle_nix_error, eval::NixEvalState, settings::NixEvaluatorBuilder, term::{NixTerm, ToNix}, bindings::err};
+use nix_for_rust::{error::handle_nix_error, eval::NixEvalState, settings::NixSettings, term::{NixTerm, ToNix}, bindings::err};
 
 fn nix_term_to_py(py: Python, term: NixTerm) -> anyhow::Result<PyObject> {
   match term {
@@ -87,16 +87,14 @@ mod nix_for_py {
   use super::*;
   
   #[pyfunction]
-  #[pyo3(signature = (store="auto", load_external_config=false, lookup_path=None, store_params=None, settings=None))]
+  #[pyo3(signature = (store="auto", lookup_path=None, store_params=None, settings=None))]
   fn nix_evaluator(
     store: &str,
-    load_external_config: bool,
     lookup_path: Option<Vec<String>>,
     store_params: Option<HashMap<String, String>>,
     settings: Option<HashMap<String, String>>
   ) -> PyResult<PyEvalState> {
-    let nix_settings = NixEvaluatorBuilder {
-      load_external_config,
+    let nix_settings = NixSettings {
       settings: settings.unwrap_or_default(),
       store_params: store_params.unwrap_or_default(),
       lookup_path: lookup_path.unwrap_or_default()

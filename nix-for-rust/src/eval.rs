@@ -1,5 +1,5 @@
 use crate::bindings::{alloc_value, expr_eval_from_string, gc_decref, gc_incref, state_create, state_free, EvalState, Value};
-use crate::settings::NixEvalStateBuilder;
+use crate::settings::NixSettings;
 use crate::store::{NixContext, NixStore};
 use crate::term::{NixEvalError, NixTerm, ToNix};
 use std::os::raw::c_void;
@@ -33,7 +33,7 @@ impl RawValue {
 #[derive(Clone)]
 pub struct NixEvalState {
   pub store: NixStore,
-  pub settings: NixEvalStateBuilder,
+  pub settings: NixSettings,
   pub _eval_state: Rc<StateWrapper>
 }
 
@@ -45,7 +45,7 @@ impl NixEvalState {
     self._eval_state.0.as_ptr()
   }
   
-  pub fn new(store: NixStore, settings: NixEvalStateBuilder) -> Result<Self> {
+  pub fn new(store: NixStore, settings: NixSettings) -> Result<Self> {
     let ctx = NixContext::default();
     let mut lookup_path: Vec<CString> = settings.lookup_path
       .iter()
