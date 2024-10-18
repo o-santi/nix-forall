@@ -1,5 +1,4 @@
-use crate::bindings::{alloc_value, expr_eval_from_string, gc_decref, gc_incref, state_create, state_free, err, EvalState, Value}; 
-use crate::error::handle_nix_error;
+use crate::bindings::{alloc_value, expr_eval_from_string, gc_decref, gc_incref, state_create, state_free, EvalState, Value};
 use crate::settings::NixSettings;
 use crate::store::{NixContext, NixStore};
 use crate::term::{NixEvalError, NixTerm, ToNix};

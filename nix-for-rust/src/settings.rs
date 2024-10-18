@@ -3,13 +3,11 @@ use std::ffi::CString;
 use anyhow::Result;
 
 use crate::eval::NixEvalState;
-use crate::bindings::{libexpr_init, libstore_init, libstore_init_no_load_config, setting_get, setting_set};
+use crate::bindings::{libexpr_init, libstore_init_no_load_config, setting_set};
 use crate::store::{NixContext, NixStore};
-use crate::utils::{callback_get_result_string, callback_get_result_string_data};
 
 #[derive(Default, Clone)]
 pub struct NixSettings {
-  pub load_external_config: bool,
   pub settings: HashMap<String, String>,
   pub store_params: HashMap<String, String>,
   pub lookup_path: Vec<String>
@@ -17,15 +15,16 @@ pub struct NixSettings {
 
 impl NixSettings {
 
-  pub fn load_config() -> Self {
-    NixSettings {
-      load_external_config: true,
-      ..Default::default()
-    }
-  }
-
   pub fn with_setting(mut self, key: &str, val: &str) -> Self {
-    self.settings.insert(key.to_string(), val.to_string());
+    let (key, val) = if let Some(actual_key) = key.strip_prefix("extra-") {
+      let mut current_val = self.settings.get(actual_key).map(String::from).unwrap_or_default();
+      current_val.push_str(" ");
+      current_val.push_str(val);
+      (actual_key.to_string(), current_val)
+    } else {
+      (key.to_string(), val.to_string())
+    };
+    self.settings.insert(key, val);
     self
   }
 
@@ -44,45 +43,37 @@ impl NixSettings {
   }
 
   pub fn get_setting(&self, key: &str) -> Option<String> {
-    match self.settings.get(key) {
-      Some(val) => Some(val.to_string()),
-      None => {
-        let ctx = NixContext::default();
-        let key = CString::new(key).expect("setting string contains null byte");
-        let mut user_data: Result<String> = Err(anyhow::format_err!("Nix C API didn't return anything"));
-        unsafe {
-          setting_get(ctx.ptr(), key.as_ptr(), Some(callback_get_result_string), callback_get_result_string_data(&mut user_data));
-        };
-        user_data.ok()
-      }
-    }
+    self.settings.get(key).map(String::from)
   }
-  
+
   pub fn with_store(self, store_path: &str) -> Result<NixEvalState> {
     let ctx = NixContext::default();
-    for (key, val) in self.settings.iter() {
-      let key = CString::new(key.as_str())?;
-      let val = CString::new(val.as_str())?;
+    let settings: Vec<(CString, CString)> = self.settings
+      .iter()
+      .map(|(key, val)| Ok((CString::new(key.as_str())?, CString::new(val.as_str())?)))
+      .collect::<Result<_>>()?;
+    for (key, val) in settings.iter() {
       unsafe {
         setting_set(ctx.ptr(), key.as_ptr(), val.as_ptr());
       };
       ctx.check_call()?;
     }
     unsafe {
-      if self.load_external_config {
-        libstore_init(ctx.ptr());
-        ctx.check_call()?;
-        libexpr_init(ctx.ptr());
-        ctx.check_call()?;
-      } else {
-        libstore_init_no_load_config(ctx.ptr());
-        ctx.check_call()?;
-        libexpr_init(ctx.ptr()); 
-        ctx.check_call()?;
+      libstore_init_no_load_config(ctx.ptr());
+      ctx.check_call().expect("Couldn't initialize libstore");
+      libexpr_init(ctx.ptr());
+      ctx.check_call().expect("Couldn't initialize libexpr");
+    }
+    let store = NixStore::new(ctx.clone(), store_path, self.store_params.clone())?;
+    let state = NixEvalState::new(store, self);
+    // we need to unset the keys, in order for them to not leak
+    // as the `setting_set` affects the globalConfig
+    for (key, _) in settings.iter() {
+      let val = CString::new("")?;
+      unsafe {
+        setting_set(ctx.ptr(), key.as_ptr(), val.as_ptr());
       }
     }
-    ctx.check_call().expect("Couldn't initialize libexpr");
-    let store = NixStore::new(ctx, store_path, self.store_params.clone())?;
-    NixEvalState::new(store, self)
+    state
   }
 }
