@@ -7,13 +7,13 @@ use crate::bindings::{libexpr_init, libstore_init_no_load_config, setting_set};
 use crate::store::{NixContext, NixStore};
 
 #[derive(Default, Clone)]
-pub struct NixSettings {
+pub struct NixEvalStateBuilder {
   pub settings: HashMap<String, String>,
   pub store_params: HashMap<String, String>,
   pub lookup_path: Vec<String>
 }
 
-impl NixSettings {
+impl NixEvalStateBuilder {
 
   pub fn with_setting(mut self, key: &str, val: &str) -> Self {
     let (key, val) = if let Some(actual_key) = key.strip_prefix("extra-") {
