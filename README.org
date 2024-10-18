@@ -3,8 +3,24 @@
 Nix FFI for all languages. Currently, it's very much in alpha quality, providing libraries for python and rust.
 
 ** Nix For Python
+=nix_for_py= exposes only one function, =nix_evaluator=, that is used to instantiate a nix evaluator, that will be used to evaluate nix code:
 
-In order to use =nix-for-py=, you need to use the overlay exposed in the flake:
+#+begin_src python
+from nix_for_py import nix_evaluator
+
+evaluator = nix_evaluator(settings={'experimental-features':'flakes'})
+nixpkgs = evaluator.eval_flake('github:nixos/nixpkgs')
+hello = nixpkgs.legacyPackages['x86_64-linux'].hello.build()
+print(hello)
+#+end_src
+
+which should print
+#+begin_src python
+{'out': '/nix/store/26xbg1ndr7hbcncrlf9nhx5is2b25d13-hello-2.12.1'}
+#+end_src
+
+*** Install
+you need to use the overlay exposed in the flake:
 #+begin_src nix
 pkgs = import nixpkgs {
   overlays = [ nix-forall.overlays.${system}.default ];
@@ -20,27 +36,23 @@ pkgs.mkShell {
 #+end_src
 
 ** Nix For Rust
-
 Use [[https://nixos.org/][nix]] values from Rust, as if they were native, and vice-versa. This crate offers a powerful way to interoperate with Nix values as idiomatically as possible, through the recently added [[https://github.com/NixOS/nix/pull/8699][Nix C-Api]]:
 #+begin_src rust
 use nix_for_rust::{settings::NixSettings, term::AttrSet};
 
 pub fn main() -> anyhow::Result<()> {
-  let mut state = NixSettings::empty().with_default_store()?;
-  let valid_pkgs = state.eval_from_string("import <nixpkgs>", std::env::current_dir()?)?
-    .call_with(AttrSet::default())?
+  let mut state = NixSettings::default()
+    .with_setting("experimental-features", "flakes")
+    .with_default_store()?;
+  let valid_pkgs = state.eval_flake("github:NixOS/nixpkgs")?
+    .get("legacyPackages")?
+    .get("x86_64-linux")?
     .items()?
     .filter_map(|(_name, term)| term.ok())
     .count();
-  println!("{valid_pkgs}");
+  println!("Rejoice! You can build {valid_pkgs} packages from nixpkgs.");
   Ok(())
 }
-#+end_src
-and when ran, it should give you the following output.
-
-#+begin_src sh
-$ nix run
-20716
 #+end_src
 
 #+begin_quote

@@ -88,7 +88,7 @@ mod nix_for_py {
   
   #[pyfunction]
   #[pyo3(signature = (store="auto", load_external_config=false, lookup_path=None, store_params=None, settings=None))]
-  fn evaluator_with(
+  fn nix_evaluator(
     store: &str,
     load_external_config: bool,
     lookup_path: Option<Vec<String>>,

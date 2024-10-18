@@ -2,14 +2,15 @@ use nix_for_rust::{settings::NixSettings, term::AttrSet};
 
 pub fn main() -> anyhow::Result<()> {
   let mut state = NixSettings::default()
-    .with_setting("extra-experimental-features", "flakes")
+    .with_setting("experimental-features", "flakes")
     .with_default_store()?;
-  let valid_pkgs = state.eval_string("import <nixpkgs>", std::env::current_dir()?)?
-    .call_with(AttrSet::default())?
+  let valid_pkgs = state.eval_flake("github:NixOS/nixpkgs")?
+    .get("legacyPackages")?
+    .get("x86_64-linux")?
     .items()?
     .filter_map(|(_name, term)| term.ok())
     .count();
-  println!("{valid_pkgs}");
+  println!("Rejoice! You can build {valid_pkgs} packages from nixpkgs.");
   Ok(())
 }
 
