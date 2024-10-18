@@ -7,7 +7,7 @@ use crate::bindings::{bindings_builder_free, bindings_builder_insert, get_attr_b
 use crate::error::NixError;
 use crate::eval::{NixEvalState, RawValue};
 use crate::store::NixContext;
-use crate::utils::callback_get_vec_u8;
+use crate::utils::{callback_get_result_string, callback_get_result_string_data};
 use thiserror::Error;
 
 pub type AttrSet<'str> = std::collections::HashMap<&'str str, NixTerm>;
@@ -24,6 +24,8 @@ pub enum NixEvalError {
   BuildError(NixError),
   #[error("Index out of bounds!")]
   IndexOutOfBounds,
+  #[error("Nix returned invalid string")]
+  InvalidString
 }
 
 pub type NixResult<T> = Result<T, NixEvalError>;
@@ -89,12 +91,11 @@ impl ToNix for RawValue {
         NixTerm::Float(f)
       },
       ValueType::NIX_TYPE_STRING => {
-        let mut raw_buffer: Vec<u8> = Vec::new();
+        let mut raw_buffer: anyhow::Result<String> = Err(anyhow::format_err!("Nix C API didn't return a string."));
         unsafe {
-          get_string(ctx, value, Some(callback_get_vec_u8), &mut raw_buffer as *mut Vec<u8> as *mut c_void)
+          get_string(ctx, value, Some(callback_get_result_string), callback_get_result_string_data(&mut raw_buffer))
         };
-        let s = String::from_utf8(raw_buffer).expect("Nix string is not a valid utf8 string");
-        NixTerm::String(s)
+        NixTerm::String(raw_buffer.map_err(|_| NixEvalError::InvalidString)?)
       },
       ValueType::NIX_TYPE_PATH => {
         let path = unsafe { get_path_string(ctx, value) };

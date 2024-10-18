@@ -22,8 +22,13 @@ impl PyEvalState {
   }
 
   pub fn eval_flake(&mut self, py:Python<'_>, flake_path: &str) -> anyhow::Result<PyObject> {
-    let mut state = self.0.lock().expect("Another thread panic'd while holding the lock");
-    let term = state.eval_flake(flake_path)?;
+    let mut eval_state = self.0.lock().expect("Another thread panic'd while holding the lock.");
+    let term = eval_state.eval_flake(flake_path)?;
     nix_term_to_py(py, term)
+  }
+
+  pub fn get_setting(&self, key: &str) -> Option<String> {
+    let eval_state = self.0.lock().expect("another thread panic'd while holding the lock.");
+    eval_state.settings.get_setting(key)
   }
 }

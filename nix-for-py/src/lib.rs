@@ -77,7 +77,7 @@ fn py_to_nix_term(obj: &Bound<'_, PyAny>, eval_state: &NixEvalState) -> anyhow::
   } else if let Ok(d) = obj.extract::<PyNixFunction>() {
     let func = d.lock();
     Ok(NixTerm::Function(func.clone()))
-  } else { 
+  } else {
     Err(anyhow::format_err!("Cannot send object to nix"))
   }
 }
@@ -95,26 +95,12 @@ mod nix_for_py {
     store_params: Option<HashMap<String, String>>,
     settings: Option<HashMap<String, String>>
   ) -> PyResult<PyEvalState> {
-    let mut nix_settings = if load_external_config {
-      NixSettings::default()
-    } else {
-      NixSettings::load_config()
+    let nix_settings = NixSettings {
+      load_external_config,
+      settings: settings.unwrap_or_default(),
+      store_params: store_params.unwrap_or_default(),
+      lookup_path: lookup_path.unwrap_or_default()
     };
-    if let Some(paths) = lookup_path {
-      for p in paths {
-        nix_settings = nix_settings.with_lookup_path(&p);
-      }
-    }
-    if let Some(params) = store_params {
-      for (key, val) in params {
-        nix_settings = nix_settings.with_store_param(&key, &val);
-      }
-    }
-    if let Some(settings) = settings {
-      for (key, val) in settings {
-        nix_settings = nix_settings.with_setting(&key, &val);
-      }
-    }
     let eval_state = nix_settings.with_store(store)?;
     Ok(PyEvalState(Arc::new(Mutex::new(eval_state))))
   }

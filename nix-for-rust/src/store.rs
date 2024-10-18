@@ -1,7 +1,7 @@
 use crate::error::{handle_nix_error, NixError};
 use crate::term::NixEvalError;
-use crate::utils::{callback_get_vec_u8, read_into_hashmap};
-use crate::bindings::{c_context, c_context_create, err, err_code, libexpr_init, libstore_init, libstore_init_no_load_config, libutil_init, store_free, store_get_version, store_open, store_parse_path, store_realise, Store, StorePath, NIX_OK};
+use crate::utils::{callback_get_result_string, callback_get_result_string_data, read_into_hashmap};
+use crate::bindings::{c_context, c_context_create, err, NIX_OK, err_code, store_free, store_get_version, store_open, store_parse_path, store_realise, Store, StorePath};
 use std::collections::HashMap;
 use std::ffi::{c_void, CString};
 use std::os::raw::c_char;
@@ -56,7 +56,7 @@ impl NixStore {
     self._store.0.as_ptr()
   }
   
-  pub fn new<S: Into<Vec<u8>>, I: IntoIterator<Item=(S, S)>>(ctx: NixContext, uri: &str, extra_params: I) -> Result<Self> {
+  pub fn new<I: IntoIterator<Item=(S, S)>, S: Into<Vec<u8>>>(ctx: NixContext, uri: &str, extra_params: I) -> Result<Self> {
     let uri = CString::new(uri)?;
     let _store = {
       let params: Vec<(CString, CString)> = extra_params
@@ -84,15 +84,10 @@ impl NixStore {
   }
   
   pub fn version(&self) -> Result<String> {
-    unsafe {
-      let version_string : Vec<u8> = Vec::new();
-      let result = store_get_version(self.ctx._ctx.as_ptr(), self.store_ptr(), Some(callback_get_vec_u8), version_string.as_ptr() as *mut c_void);
-      if result == NIX_OK as i32 {
-        Ok(String::from_utf8(version_string).expect("Nix returned invalid string"))
-      } else {
-        anyhow::bail!("Could not read version string.")
-      }
-    }
+    let mut version_string : Result<String> = Err(anyhow::anyhow!("Nix C API didn't return a string."));
+    unsafe { store_get_version(self.ctx._ctx.as_ptr(), self.store_ptr(), Some(callback_get_result_string), callback_get_result_string_data(&mut version_string)) };
+    self.ctx.check_call()?;
+    version_string
   }
 
   fn parse_path(&self, path: &str) -> Result<NonNull<StorePath>, NixEvalError> {

@@ -1,5 +1,6 @@
 use crate::bindings::{alloc_value, expr_eval_from_string, gc_decref, gc_incref, state_create, state_free, err, EvalState, Value}; 
 use crate::error::handle_nix_error;
+use crate::settings::NixSettings;
 use crate::store::{NixContext, NixStore};
 use crate::term::{NixEvalError, NixTerm, ToNix};
 use std::os::raw::c_void;
@@ -33,6 +34,7 @@ impl RawValue {
 #[derive(Clone)]
 pub struct NixEvalState {
   pub store: NixStore,
+  pub settings: NixSettings,
   pub _eval_state: Rc<StateWrapper>
 }
 
@@ -44,11 +46,11 @@ impl NixEvalState {
     self._eval_state.0.as_ptr()
   }
   
-  pub fn new<P:IntoIterator<Item=String>>(store: NixStore, lookup_paths: P) -> Result<Self> {
+  pub fn new(store: NixStore, settings: NixSettings) -> Result<Self> {
     let ctx = NixContext::default();
-    let mut lookup_path: Vec<CString> = lookup_paths
-      .into_iter()
-      .map(|path| { Ok(CString::new(path)?)})
+    let mut lookup_path: Vec<CString> = settings.lookup_path
+      .iter()
+      .map(|path| { Ok(CString::new(path.clone())?)})
       .collect::<Result<_>>()?;
     let mut lookup_path: Vec<*const c_char> = lookup_path
       .iter_mut()
@@ -60,7 +62,7 @@ impl NixEvalState {
     };
     ctx.check_call()?;
     let state = NonNull::new(state).ok_or(anyhow::format_err!("state_create return null pointer"))?;
-    Ok(NixEvalState { store, _eval_state: Rc::new(StateWrapper(state)) })
+    Ok(NixEvalState { store, settings, _eval_state: Rc::new(StateWrapper(state)) })
   }
 
   pub fn eval_string(&mut self, expr: &str, cwd: PathBuf) -> Result<NixTerm> {
@@ -95,6 +97,11 @@ impl NixEvalState {
   }
 
   pub fn eval_flake(&mut self, flake_path: &str) -> Result<NixTerm> {
+    let has_flakes = |attr| self.settings.get_setting(attr).map(|s| s.contains("flakes")).unwrap_or(false);
+    let is_flake_enabled = has_flakes("extra-experimental-features") || has_flakes("experimental-features");
+    if !is_flake_enabled {
+      anyhow::bail!("Nix Evaluator does not have flakes enabled. Please create it using `extra-experimental-features=flakes`.")
+    }
     let (flake_path, cwd) = {
       let path= std::path::Path::new(flake_path);
       if path.try_exists()? {

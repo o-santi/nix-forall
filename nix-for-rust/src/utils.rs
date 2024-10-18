@@ -1,6 +1,6 @@
-use std::{collections::HashMap, ffi::{c_char, c_void, CStr}, path::PathBuf, ptr::NonNull};
-
-use crate::{bindings::{c_context, copy_value, init_bool, init_int, value_force, version_get, EvalState, Value}, eval::{NixEvalState, RawValue, StateWrapper}, store::{NixContext, NixStore}, term::{NixEvalError, NixTerm, ToNix}};
+use std::{collections::HashMap, ffi::{c_char, c_void, CStr}};
+use anyhow::Result;
+use crate::bindings::version_get;
 
 pub fn get_nix_version() -> String {
   unsafe {
@@ -12,17 +12,37 @@ pub fn get_nix_version() -> String {
   }
 }
 
-pub unsafe extern "C" fn callback_get_vec_u8(
-    start: *const c_char,
+// taken from https://github.com/nixops4/nixops4/blob/main/rust/nix-util/src/string_return.rs
+pub unsafe extern "C" fn callback_get_result_string(
+    start: *const ::std::os::raw::c_char,
     n: std::os::raw::c_uint,
-    user_data: *mut c_void,
+    user_data: *mut std::os::raw::c_void,
 ) {
-    let ret = user_data as *mut Vec<u8>;
-    let slice = std::slice::from_raw_parts(start as *const u8, n as usize);
-    if !(*ret).is_empty() {
-        panic!("callback_get_vec_u8: slice must be empty. Were we called twice?");
+    let ret = user_data as *mut Result<String>;
+
+    if start == std::ptr::null() {
+        if n != 0 {
+            panic!("callback_get_result_string: start is null but n is not zero");
+        }
+        *ret = Ok(String::new());
+        return;
     }
-    (*ret).extend_from_slice(slice);
+
+    let slice = std::slice::from_raw_parts(start as *const u8, n as usize);
+
+    if !(*ret).is_err() {
+        panic!(
+            "callback_get_result_string: Result must be initialized to Err. Did Nix call us twice?"
+        );
+    }
+
+    *ret = String::from_utf8(slice.to_vec())
+        .map_err(|e| anyhow::format_err!("Nix string is not valid UTF-8: {}", e));
+}
+
+// taken from https://github.com/nixops4/nixops4/blob/main/rust/nix-util/src/string_return.rs
+pub fn callback_get_result_string_data(vec: &mut Result<String>) -> *mut std::os::raw::c_void {
+    vec as *mut Result<String> as *mut std::os::raw::c_void
 }
 
 pub extern "C" fn read_into_hashmap(map: *mut c_void, outname: *const c_char, out: *const c_char) {
