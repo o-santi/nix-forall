@@ -1,8 +1,17 @@
 * Nix Forall
 
-Nix FFI for all languages. Currently, it's very much in alpha quality, providing libraries for python and rust.
+Nix FFI for all languages. This is a collection of packages built upon a solid interface for interacting with the nix evaluator in Rust, and a couple of wrapper libraries so that it can be seamlessly accessed from other languages as well.
 
-** Nix For Python
+It is very much in alpha and constantly changing, so don't expect the API's to be stable as of now. Still, the general interface for all libraries should stay relatively intact:
+1. Build a nix evaluator instance with given settings, where the default is an empty one.
+2. Use said nix evaluator to load a nix file, which will return you a nix value.
+3. Interact with said nix value.
+
+   If it is a "simple" value, ie. string, number, float, it should translate to a builtin value, while lists, attribute sets and functions will have wrappers around them to implement some niceties, like lazy evaluation by default, special accessors and derivation =build()= helpers.
+
+Currently, only Rust and Python libraries are defined.
+
+** =nix-for-py/=
 =nix_for_py= exposes only one function, =nix_evaluator=, that is used to instantiate a nix evaluator, that will be used to evaluate nix code:
 
 #+begin_src python
@@ -35,7 +44,7 @@ pkgs.mkShell {
 };
 #+end_src
 
-** Nix For Rust
+** =nix-for-rust/=
 Use [[https://nixos.org/][nix]] values from Rust, as if they were native, and vice-versa. This crate offers a powerful way to interoperate with Nix values as idiomatically as possible, through the recently added [[https://github.com/NixOS/nix/pull/8699][Nix C-Api]]:
 #+begin_src rust
 use nix_for_rust::{settings::NixSettings, term::AttrSet};
