@@ -1,8 +1,7 @@
 use pyo3::prelude::*;
 use nix_for_rust::eval::NixEvalState;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::collections::HashMap;
-use crate::{py_to_nix_term, nix_term_to_py};
+use crate::nix_term_to_py;
 
 #[derive(Clone)]
 #[pyclass]

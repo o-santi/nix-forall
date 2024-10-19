@@ -1,6 +1,6 @@
 #![allow(non_upper_case_globals)]
 use std::collections::HashMap;
-use std::ffi::{c_char, c_uint, c_void, CStr, CString};
+use std::ffi::{c_char, c_uint, CStr, CString};
 use std::ptr::NonNull;
 use std::path::PathBuf;
 use crate::bindings::{bindings_builder_free, bindings_builder_insert, get_attr_byidx, get_attr_byname, get_attr_name_byidx, get_attrs_size, get_bool, get_float, get_int, get_list_byidx, get_list_size, get_path_string, get_string, get_type, init_bool, init_float, init_int, init_null, init_path_string, init_string, list_builder_insert, make_attrs, make_bindings_builder, make_list, make_list_builder, value_call, ValueType};
@@ -52,11 +52,11 @@ pub enum NixTerm {
 }
 
 pub trait ToNix {
-  fn to_nix<'s>(self, eval_state: &'s NixEvalState) -> NixResult<NixTerm>;
+  fn to_nix(self, eval_state: &NixEvalState) -> NixResult<NixTerm>;
 }
 
 pub trait Repr {
-  fn repr_rec<'s>(&self, s: &'s mut String) -> NixResult<()>;
+  fn repr_rec(&self, s: &mut String) -> NixResult<()>;
   fn repr(&self) -> NixResult<String> {
     let mut buf = String::new();
     self.repr_rec(&mut buf)?;
@@ -65,7 +65,7 @@ pub trait Repr {
 }
 
 impl ToNix for NixTerm {
-  fn to_nix<'s>(self, _eval_state: &'s NixEvalState) -> NixResult<NixTerm> {
+  fn to_nix(self, _eval_state: &NixEvalState) -> NixResult<NixTerm> {
     Ok(self)
   }
 }
@@ -139,11 +139,11 @@ pub struct NixNamesIterator {
 }
 
 impl Repr for NixAttrSet {
-  fn repr_rec<'s>(&self, s: &'s mut String) -> NixResult<()> {
-    s.push_str("{");
+  fn repr_rec(&self, s: &mut String) -> NixResult<()> {
+    s.push('{');
     for (key, val) in self.items()? {
       let val = val?;
-      s.push_str(" ");
+      s.push(' ');
       s.push_str(&key);
       s.push_str(" = ");
       if let NixTerm::List(_) = val {
@@ -153,7 +153,7 @@ impl Repr for NixAttrSet {
       } else {
         val.repr_rec(s)?;
       };
-      s.push_str(";");
+      s.push(';');
     }
     s.push_str(" }");
     Ok(())
@@ -194,6 +194,10 @@ impl NixAttrSet {
     Ok(len)
   }
 
+  pub fn is_empty(&self) -> NixResult<bool> {
+    Ok(self.len()? == 0)
+  }
+  
   pub fn names(&self) -> NixResult<NixNamesIterator> {
     let iterator = NixNamesIterator {
       val: self.clone(), len: self.len()?, idx: 0
@@ -229,6 +233,10 @@ impl NixList {
     self.0._state.store.ctx.check_call()?;
     Ok(len)
   }
+
+  pub fn is_empty(&self) -> NixResult<bool> {
+    Ok(self.len()? == 0)
+  }
   
   pub fn iter(&self) -> NixResult<NixListIterator> {
     let iterator = NixListIterator {
@@ -254,11 +262,11 @@ impl NixList {
 }
 
 impl Repr for NixList {
-  fn repr_rec<'s>(&self, s: &'s mut String) -> NixResult<()> {
-    s.push_str("[");
+  fn repr_rec(&self, s: &mut String) -> NixResult<()> {
+    s.push('[');
     for t in self.iter()? {
       let t = t?;
-      s.push_str(" ");
+      s.push(' ');
       if let NixTerm::List(_) = t {
         s.push_str("[ ... ]");
       } else if let NixTerm::AttrSet(_) = t {
@@ -452,7 +460,7 @@ impl Iterator for NixListIterator {
       return None;
     }
     let item = self.val.get_idx(self.idx);
-    self.idx = self.idx + 1;
+    self.idx += 1;
     Some(item)
   }
 }
@@ -473,7 +481,7 @@ impl Iterator for NixItemsIterator {
       self.idx as c_uint,
       &mut name
     )};
-    self.idx = self.idx + 1;
+    self.idx += 1;
     let name = unsafe { CStr::from_ptr(name) }.to_str().expect("Nix returned an invalid string").to_owned();
     if let Err(err) = raw._state.store.ctx.check_call() {
       return Some((name, Err(err.into())));
@@ -504,7 +512,7 @@ impl Iterator for NixNamesIterator {
     )};
     raw._state.store.ctx.check_call().expect("something went wrong");
     let name = unsafe { CStr::from_ptr(name) }.to_str().expect("Nix returned an invalid string").to_owned();
-    self.idx = self.idx + 1;
+    self.idx += 1;
     Some(name)
   }
 }
@@ -540,7 +548,7 @@ impl<T: ToNix> ToNix for Vec<T> {
       make_list_builder(ctx, state.state_ptr(), self.len())
     };
     for (idx, elem) in self.into_iter().enumerate() {
-      let value = elem.to_nix(state)?.to_raw_value(&state);
+      let value = elem.to_nix(state)?.to_raw_value(state);
       unsafe {
         list_builder_insert(ctx, list_builder, idx as c_uint, value.value.as_ptr());
       }

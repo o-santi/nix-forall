@@ -85,7 +85,7 @@ impl NixEvalState {
   }
 
   pub fn eval_file(&mut self, file: &std::path::Path) -> Result<NixTerm> {
-    let contents = std::fs::read_to_string(&file)?;
+    let contents = std::fs::read_to_string(file)?;
     let realpath = std::fs::canonicalize(file)?;
     let cwd = if realpath.is_dir() {
       realpath
@@ -142,6 +142,6 @@ impl Clone for RawValue {
     unsafe {
       gc_incref(self._state.store.ctx._ctx.as_ptr(), self.value.as_ptr() as *const c_void);
     }
-    RawValue { _state: self._state.clone(), value: self.value.clone()  }
+    RawValue { _state: self._state.clone(), value: self.value  }
   }
 }

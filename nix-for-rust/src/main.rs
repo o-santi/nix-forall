@@ -1,4 +1,4 @@
-use nix_for_rust::{settings::NixSettings, term::AttrSet};
+use nix_for_rust::settings::NixSettings;
 
 pub fn main() -> anyhow::Result<()> {
   let mut state = NixSettings::default()

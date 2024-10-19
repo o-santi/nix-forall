@@ -1,8 +1,8 @@
 use crate::utils::{callback_get_result_string, callback_get_result_string_data};
-use crate::bindings::{err, err_info_msg, err_msg, err_name, NIX_ERR_KEY, NIX_ERR_NIX_ERROR, NIX_ERR_OVERFLOW, NIX_ERR_UNKNOWN, NIX_OK};
+use crate::bindings::{err, err_info_msg, err_msg, err_name, NIX_ERR_KEY, NIX_ERR_NIX_ERROR, NIX_ERR_OVERFLOW, NIX_ERR_UNKNOWN};
 use crate::store::NixContext;
 use std::fmt::Display;
-use std::ffi::{c_uint, c_void, CStr};
+use std::ffi::{c_uint, CStr};
 use thiserror::Error;
 
 #[derive(Error)]
@@ -56,9 +56,9 @@ pub fn handle_nix_error(error: err, ctx: &NixContext) -> NixError {
     NIX_ERR_NIX_ERROR => {
       let temp_ctx = NixContext::default();
       let mut name: anyhow::Result<String> = Err(anyhow::anyhow!("Nix C API didn't return string"));
-      let result = unsafe {
-        err_name(temp_ctx._ctx.as_ptr(), ctx._ctx.as_ptr(), Some(callback_get_result_string), callback_get_result_string_data(&mut name))
-      };
+      unsafe {
+        err_name(temp_ctx._ctx.as_ptr(), ctx._ctx.as_ptr(), Some(callback_get_result_string), callback_get_result_string_data(&mut name));
+      }
       temp_ctx.check_call().expect("error thrown when reading error name");
       let name = name.expect("Nix should always return valid strings");
       let mut info_msg: anyhow::Result<String> = Err(anyhow::anyhow!("Nix C API didn't return string"));
