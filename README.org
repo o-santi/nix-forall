@@ -33,7 +33,7 @@ which should print
 #+end_src
 
 *** Install
-you need to use the overlay exposed in the flake:
+The best way to utilize it is to use it through the =overlay= exposed by this flake, which will add the =nix_for_py= package to all python versions of nixpkgs.
 #+begin_src nix
 pkgs = import nixpkgs {
   overlays = [ nix-forall.overlays.${system}.default ];
