@@ -3,13 +3,13 @@ mod list;
 mod function;
 mod nix_evaluator;
 
-use std::{collections::HashMap, path::{PathBuf, Path}, sync::{Arc, Mutex}};
+use std::{collections::HashMap, sync::{Arc, Mutex}};
 use attrset::PyNixAttrSet;
 use function::PyNixFunction;
 use list::PyNixList;
 use nix_evaluator::PyEvalState;
 use pyo3::{exceptions, prelude::*, types::{PyList, PyDict}};
-use nix_for_rust::{error::handle_nix_error, eval::NixEvalState, settings::NixSettings, term::{NixTerm, ToNix}, bindings::err};
+use nix_for_rust::{eval::NixEvalState, settings::NixSettings, term::{NixTerm, ToNix}};
 
 fn nix_term_to_py(py: Python, term: NixTerm) -> anyhow::Result<PyObject> {
   match term {
