@@ -76,10 +76,7 @@ impl NixStore {
         store_open(ctx._ctx.as_ptr(), uri.into_raw(), params.as_mut_ptr())
       }
     };
-    let store = match NonNull::new(_store) {
-      Some(s) => s,
-      None => panic!("store_open returned null")
-    };
+    let store = NonNull::new(_store).ok_or(anyhow::anyhow!("nix_store_open returned NonNull"))?;
     Ok(NixStore { ctx, _store: Rc::new(StoreWrapper(store)) })
   }
   

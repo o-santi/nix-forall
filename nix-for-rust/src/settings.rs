@@ -16,15 +16,7 @@ pub struct NixSettings {
 impl NixSettings {
 
   pub fn with_setting(mut self, key: &str, val: &str) -> Self {
-    let (key, val) = if let Some(actual_key) = key.strip_prefix("extra-") {
-      let mut current_val = self.settings.get(actual_key).map(String::from).unwrap_or_default();
-      current_val.push_str(" ");
-      current_val.push_str(val);
-      (actual_key.to_string(), current_val)
-    } else {
-      (key.to_string(), val.to_string())
-    };
-    self.settings.insert(key, val);
+    self.settings.insert(key.to_string(), val.to_string());
     self
   }
 
