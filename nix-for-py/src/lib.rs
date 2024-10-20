@@ -33,7 +33,7 @@ fn nix_term_to_py(py: Python, term: NixTerm) -> anyhow::Result<PyObject> {
       let t = rawvalue.clone().to_nix(&rawvalue._state)?;
       nix_term_to_py(py, t)
     }
-    NixTerm::External(_) => todo!(),
+    NixTerm::External(_) => anyhow::bail!("Cannot turn external nix value to python yet."),
   }
 }
 
