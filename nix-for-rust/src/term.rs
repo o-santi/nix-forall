@@ -129,23 +129,23 @@ impl ToNix for RawValue {
 
 /// Iterator over elements in a nix list
 pub struct NixListIterator {
-  pub val: NixList,
   pub len: u32,
-  pub idx: u32
+  pub(crate) val: NixList,
+  pub(crate) idx: u32
 }
 
 /// Iterator over items in a nix attribute set
 pub struct NixItemsIterator {
-  pub val: NixAttrSet,
   pub len: u32,
-  pub idx: u32
+  pub(crate) val: NixAttrSet,
+  pub(crate) idx: u32
 }
 
 /// Iterator over keys in a nix attribute set
 pub struct NixNamesIterator {
-  pub val: NixAttrSet,
   pub len: u32,
-  pub idx: u32
+  pub(crate) val: NixAttrSet,
+  pub(crate) idx: u32
 }
 
 impl Repr for NixAttrSet {
@@ -251,7 +251,8 @@ impl NixThunk {
 }
 
 impl NixFunction {
-  
+
+  /// Calls the nix function with the argument converted to nix.
   pub fn call_with<T: ToNix>(&self, arg: T) -> NixResult<NixTerm> {
     let state = self.0._state.state_ptr();
     let arg = arg.to_nix(&self.0._state)?.to_raw_value(&self.0._state);
@@ -266,16 +267,20 @@ impl NixFunction {
 }
 
 impl NixList {
+
+  /// How many elements are there in the list.
   pub fn len(&self) -> NixResult<u32> {
     let len = unsafe { get_list_size(self.0._state.store.ctx.ptr(), self.0.value.as_ptr()) };
     self.0._state.store.ctx.check_call()?;
     Ok(len)
   }
 
+  /// Is the list empty?
   pub fn is_empty(&self) -> NixResult<bool> {
     Ok(self.len()? == 0)
   }
-  
+
+  /// Returns the iterator over the elements in a list
   pub fn iter(&self) -> NixResult<NixListIterator> {
     let iterator = NixListIterator {
       val: self.clone(), len: self.len()?, idx: 0
@@ -283,6 +288,7 @@ impl NixList {
     Ok(iterator)
   }
 
+  /// Returns the element at idx `idx` or throws an `IndexOutOfBounds` error.
   pub fn get_idx(&self, idx: u32) -> NixResult<NixTerm> {
     let raw = &self.0;
     let size = self.len()?;
@@ -320,6 +326,7 @@ impl Repr for NixList {
 
 impl NixTerm {
 
+  /// Builds the term if the term is an attribute set, otherwise type error.
   pub fn build(&self) -> NixResult<HashMap<String, String>> {
     if let NixTerm::AttrSet(attrset) = self {
       attrset.build()
@@ -328,6 +335,7 @@ impl NixTerm {
     }
   }
 
+  /// Returns the name of the type of the term.
   pub fn get_typename(&self) -> String {
     match self {
       NixTerm::Null => "null",
@@ -344,6 +352,7 @@ impl NixTerm {
     }.to_string()
   }
 
+  /// Returns the iterator over names if the element is an attrset, otherwise type error.
   pub fn names(&self) -> NixResult<NixNamesIterator> {
     if let NixTerm::AttrSet(attrset) = self {
       attrset.names()
@@ -351,7 +360,8 @@ impl NixTerm {
       Err(NixEvalError::TypeError { expected: "attrset".into(), got: self.get_typename() })
     }
   }
-  
+
+  /// Returns the iterator over items if the element is an attrset, otherwise type error.
   pub fn items(&self) -> NixResult<NixItemsIterator> {
     if let NixTerm::AttrSet(attrset) = self {
       attrset.items()
