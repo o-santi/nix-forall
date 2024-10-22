@@ -52,7 +52,7 @@ pub struct StoreWrapper(NonNull<Store>);
 
 impl NixStore {
 
-  pub fn store_ptr(&self) -> *mut Store {
+  pub(crate) fn store_ptr(&self) -> *mut Store {
     self._store.0.as_ptr()
   }
   

@@ -3,7 +3,7 @@
 Nix FFI for all languages. This is a collection of packages built upon a solid interface for interacting with the nix evaluator in Rust, through the recently added [[https://github.com/NixOS/nix/pull/8699][Nix C-Api]], and a couple of wrapper libraries so that it can be seamlessly accessed from other languages as well.
 
 It is very much in alpha and constantly changing, so don't expect the API's to be stable as of now. Still, the general interface for all libraries should stay relatively intact:
-1. Build a nix evaluator instance with given settings, where the default is an empty one. You may pass per-evaluator settings, like =extra-experimental-features= to customize behavior; for instance, that is needed in order to evaluate flakes.
+1. Build a nix evaluator instance with given settings, where the default is an empty one. You may pass per-evaluator settings to customize behavior; for instance, like ~extra-experimental-features="flakes"~ is needed in order to call ~builtins.getFlake~, used inside ~state.eval_flake~.
 2. Use said nix evaluator to load a nix file, flake or string.
 3. Interact with said nix value.
 
@@ -51,7 +51,7 @@ pkgs.mkShell {
 ** =nix-for-rust/=
 The main way to invoke an evaluator is through the =NixSettings= builder. It lets you set settings which customize the behavior of the evaluator, and to finalize it, you must give it a store path, which will return the instance of the evaluator.
 #+begin_src rust
-use nix_for_rust::{settings::NixSettings, term::AttrSet};
+use nix_for_rust::settings::NixSettings;
 
 pub fn main() -> anyhow::Result<()> {
   let mut state = NixSettings::default()

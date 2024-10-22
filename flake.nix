@@ -92,6 +92,7 @@
         LIBCLANG_PATH = "${libclang}/lib";
         buildInputs = [
           (python3.withPackages (p: [ p.nix-for-py ]))
+          gdb
           pkg-config
           nix
           libclang

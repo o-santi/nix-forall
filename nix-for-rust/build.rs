@@ -20,9 +20,11 @@ fn main() {
   // println!("cargo:rustc-link-lib=nixexprc");
   let nix_expr_c = pkg_config::probe_library("nix-expr-c").unwrap();
   let nix_store_c = pkg_config::probe_library("nix-store-c").unwrap();
+  let gc = pkg_config::probe_library("bdw-gc").unwrap();
   let bindings = bindgen::Builder::default()
     .clang_args(nix_expr_c.include_paths.iter().map(|path| format!("-I{}", path.to_string_lossy())))
     .clang_args(nix_store_c.include_paths.iter().map(|path| format!("-I{}", path.to_string_lossy())))
+    .clang_args(gc.include_paths.iter().map(|path| format!("-I{}", path.to_string_lossy())))
     .header("src/wrapper.h")
     .parse_callbacks(Box::new(StripNixPrefix {}))
     .default_enum_style(EnumVariation::ModuleConsts)
