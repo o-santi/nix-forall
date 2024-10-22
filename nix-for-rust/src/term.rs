@@ -3,15 +3,17 @@ use std::collections::HashMap;
 use std::ffi::{c_char, c_uint, CStr, CString};
 use std::ptr::NonNull;
 use std::path::PathBuf;
-use crate::bindings::{bindings_builder_free, bindings_builder_insert, get_attr_byidx, get_attr_byname, get_attr_name_byidx, get_attrs_size, get_bool, get_float, get_int, get_list_byidx, get_list_size, get_path_string, get_string, get_type, init_bool, init_float, init_int, init_null, init_path_string, init_string, list_builder_insert, make_attrs, make_bindings_builder, make_list, make_list_builder, value_call, ValueType};
+use crate::bindings::{bindings_builder_free, bindings_builder_insert, get_attr_byidx, get_attr_byname, get_attr_name_byidx, get_attrs_size, get_bool, get_float, get_int, get_list_byidx, get_list_size, get_path_string, get_string, get_type, init_bool, init_float, init_int, init_null, init_path_string, init_string, list_builder_insert, make_attrs, make_bindings_builder, make_list, make_list_builder, value_call, value_force, ValueType};
 use crate::error::NixError;
 use crate::eval::{NixEvalState, RawValue};
 use crate::store::NixContext;
 use crate::utils::{callback_get_result_string, callback_get_result_string_data};
 use thiserror::Error;
 
+/// Type of hashmaps that can be represented as a nix attrset
 pub type AttrSet<'str> = std::collections::HashMap<&'str str, NixTerm>;
 
+/// An error that might happen when evaluating nix expressions.
 #[derive(Debug, Error)]
 pub enum NixEvalError {
   #[error("{0}")]
@@ -20,8 +22,6 @@ pub enum NixEvalError {
   TypeError { expected: String, got: String },
   #[error("Cannot build non-derivation")]
   NotADerivation,
-  #[error("Build error")]
-  BuildError(NixError),
   #[error("Index out of bounds!")]
   IndexOutOfBounds,
   #[error("Nix returned invalid string")]
@@ -30,16 +30,24 @@ pub enum NixEvalError {
 
 pub type NixResult<T> = Result<T, NixEvalError>;
 
-#[derive(Clone)]
-pub struct NixAttrSet(pub RawValue);
-#[derive(Clone)]
-pub struct NixList(pub RawValue);
-#[derive(Clone)]
-pub struct NixFunction(pub RawValue);
 
+/// Wrapper around a pointer to nix attribute set.
+#[derive(Clone)]
+pub struct NixAttrSet(pub(crate) RawValue);
+/// Wrapper around a pointer to nix list.
+#[derive(Clone)]
+pub struct NixList(pub(crate) RawValue);
+/// Wrapper around a pointer to nix function.
+#[derive(Clone)]
+pub struct NixFunction(pub(crate) RawValue);
+/// Wrapper around a pointer to nix thunk
+#[derive(Clone)]
+pub struct NixThunk(pub(crate) RawValue);
+
+/// A nix term represented as a rust value.
 pub enum NixTerm {
   Null,
-  Thunk(RawValue),
+  Thunk(NixThunk),
   Int(i64),
   Float(f64),
   Bool(bool),
@@ -51,12 +59,15 @@ pub enum NixTerm {
   Function(NixFunction)
 }
 
+  /// Conversion trait between rust objects and nix values.
 pub trait ToNix {
   fn to_nix(self, eval_state: &NixEvalState) -> NixResult<NixTerm>;
 }
 
+/// Trait to print a nix term, which may throw errors during evaluation time.
 pub trait Repr {
   fn repr_rec(&self, s: &mut String) -> NixResult<()>;
+  /// Returns a string with the objects representation, or an error that happened during evaluation
   fn repr(&self) -> NixResult<String> {
     let mut buf = String::new();
     self.repr_rec(&mut buf)?;
@@ -100,19 +111,15 @@ impl ToNix for RawValue {
       ValueType::NIX_TYPE_PATH => {
         let path = unsafe { get_path_string(ctx, value) };
         let path = unsafe { CStr::from_ptr(path) };
-        let path = path.to_str().expect("Nix path must be valid string");
+        let path = path.to_str().map_err(|_| NixEvalError::InvalidString)?;
         let path = PathBuf::from(path);
         NixTerm::Path(path)
       },
       ValueType::NIX_TYPE_LIST => NixTerm::List(NixList(self)),
       ValueType::NIX_TYPE_ATTRS => NixTerm::AttrSet(NixAttrSet(self)),
-      ValueType::NIX_TYPE_EXTERNAL => todo!("Not done yet!"),
-      ValueType::NIX_TYPE_FUNCTION => {
-        NixTerm::Function(NixFunction(self))
-      },
-      ValueType::NIX_TYPE_THUNK => {
-        NixTerm::Thunk(self)
-      },
+      ValueType::NIX_TYPE_FUNCTION => NixTerm::Function(NixFunction(self)),
+      ValueType::NIX_TYPE_THUNK =>  NixTerm::Thunk(NixThunk(self)),
+      ValueType::NIX_TYPE_EXTERNAL => todo!("Cannot handle external values yet"),
       _ => panic!("Unknown value type"),
     };
     context.check_call()?;
@@ -120,18 +127,21 @@ impl ToNix for RawValue {
   }
 }
 
+/// Iterator over elements in a nix list
 pub struct NixListIterator {
   pub val: NixList,
   pub len: u32,
   pub idx: u32
 }
 
+/// Iterator over items in a nix attribute set
 pub struct NixItemsIterator {
   pub val: NixAttrSet,
   pub len: u32,
   pub idx: u32
 }
 
+/// Iterator over keys in a nix attribute set
 pub struct NixNamesIterator {
   pub val: NixAttrSet,
   pub len: u32,
@@ -161,6 +171,10 @@ impl Repr for NixAttrSet {
 }
 
 impl NixAttrSet {
+  
+  /// Tries to build an attribute set as if it was a derivation.
+  /// 
+  /// Throws [`NotADerivation`][NixEvalError] if the attrset is not a derivation
   pub fn build(&self) -> NixResult<HashMap<String, String>> {
     let term_type = self.get("type").map_err(|_| NixEvalError::NotADerivation)?;
     let NixTerm::String(s) = term_type else { return Err(NixEvalError::NotADerivation) };
@@ -172,10 +186,13 @@ impl NixAttrSet {
     }
   }
 
+  /// Gets an attribute from the underlying attribute set.
+  ///
+  /// Throws [`RuntimeError(KeyError)`][NixError] when the key doesn't exist.
   pub fn get(&self, name: &str) -> NixResult<NixTerm> {
     let ctx = &self.0._state.store.ctx;
     let state = &self.0._state;
-    let name = CString::new(name).expect("String is not a valid C string");
+    let name = CString::new(name).map_err(|_| NixEvalError::InvalidString)?;
     let val = unsafe {
       get_attr_byname(ctx.ptr(), self.0.value.as_ptr(), state.state_ptr(), name.as_ptr())
     };
@@ -188,16 +205,19 @@ impl NixAttrSet {
     rawvalue.to_nix(&self.0._state)
   }
 
+  /// How many elements there are in the attribute set.
   pub fn len(&self) -> NixResult<u32> {
     let len = unsafe { get_attrs_size(self.0._state.store.ctx.ptr(), self.0.value.as_ptr()) };
     self.0._state.store.ctx.check_call()?;
     Ok(len)
   }
 
+  /// Whether it's empty or not.
   pub fn is_empty(&self) -> NixResult<bool> {
     Ok(self.len()? == 0)
   }
-  
+
+  /// Returns an iterator over the keys of the attribute set.
   pub fn names(&self) -> NixResult<NixNamesIterator> {
     let iterator = NixNamesIterator {
       val: self.clone(), len: self.len()?, idx: 0
@@ -205,6 +225,7 @@ impl NixAttrSet {
     Ok(iterator)
   }
 
+  /// Returns an iterator over the pairs `(String, NixTerm)` of the attribute set.
   pub fn items(&self) -> NixResult<NixItemsIterator> {
     let iterator = NixItemsIterator {
       val: self.clone(), len: self.len()?, idx: 0
@@ -213,7 +234,24 @@ impl NixAttrSet {
   }
 }
 
+impl NixThunk {
+  /// Forces the evaluation of the thunk and resolves it into
+  /// a non-thunk term.
+  pub fn force(self) -> NixResult<NixTerm> {
+    let rawvalue = &self.0;
+    let context = rawvalue._state.store.ctx.ptr();
+    let state = rawvalue._state.state_ptr();
+    let value = rawvalue.value.as_ptr();
+    unsafe {
+      value_force(context, state, value)
+    };
+    rawvalue._state.store.ctx.check_call()?;
+    rawvalue.clone().to_nix(&rawvalue._state)
+  }
+}
+
 impl NixFunction {
+  
   pub fn call_with<T: ToNix>(&self, arg: T) -> NixResult<NixTerm> {
     let state = self.0._state.state_ptr();
     let arg = arg.to_nix(&self.0._state)?.to_raw_value(&self.0._state);
@@ -337,8 +375,8 @@ impl NixTerm {
     let mut rawval = RawValue::empty(_state.clone());
     let val_ptr = rawval.value.as_ptr();
     match self {
-      NixTerm::Thunk(raw) | 
-      NixTerm::External(raw)  => { rawval = raw;}
+      NixTerm::External(raw)  => { rawval = raw; }
+      NixTerm::Thunk(thunk) => { rawval = thunk.0; }
       NixTerm::List(list) => { rawval = list.0; }
       NixTerm::AttrSet(attrset) => { rawval = attrset.0; }
       NixTerm::Function(func) => { rawval = func.0; },

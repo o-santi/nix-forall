@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use nix_for_rust::term::{NixFunction, NixTerm};
 use pyo3::{prelude::*, types::PyTuple};
 
-use crate::{nix_term_to_py, py_to_nix_term};
+use crate::{nix_term_to_py, PyTerm};
 
 
 #[pyclass(frozen)]
@@ -25,14 +25,12 @@ impl PyNixFunction {
   pub fn __call__(&self, args: &Bound<'_, PyTuple>) -> anyhow::Result<PyObject> {
     let function = self.0.lock().map_err(|e| anyhow::format_err!("{e}"))?;
     let mut ret = NixTerm::Function(function.clone());
-    let mut args = args.iter();
-    while let Some(arg) = args.next() {
+    for arg in args {
       let f: NixFunction = match ret {
         NixTerm::Function(f) => Ok::<NixFunction, anyhow::Error>(f),
         _ => anyhow::bail!("Cannot call non-function argument")
       }?;
-      let arg = py_to_nix_term(&arg, &f.0._state)?;
-      ret = f.call_with(arg)?;
+      ret = f.call_with(PyTerm(&arg))?;
     }
     Python::with_gil(|py| nix_term_to_py(py, ret))
   }
