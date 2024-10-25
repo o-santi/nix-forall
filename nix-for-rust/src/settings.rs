@@ -42,8 +42,6 @@ impl NixSettings {
   pub fn with_store(self, store_path: &str) -> Result<NixEvalState> {
     let ctx = NixContext::default();
     unsafe {
-      libutil_init(ctx.ptr());
-      ctx.check_call()?;
       libstore_init_no_load_config(ctx.ptr());
       ctx.check_call().expect("Couldn't initialize libstore");
       libexpr_init(ctx.ptr());
@@ -54,17 +52,19 @@ impl NixSettings {
       .map(|(key, val)| Ok((CString::new(key.as_str())?, CString::new(val.as_str())?)))
       .collect::<Result<_>>()?;
     for (key, val) in settings.iter_mut() {
+      let mut old_val: Result<String> = Err(anyhow::format_err!(""));
       unsafe {
+        setting_get(ctx.ptr(), key.as_ptr(), Some(callback_get_result_string), callback_get_result_string_data(&mut old_val));
         setting_set(ctx.ptr(), key.as_ptr(), val.as_ptr());
       };
       ctx.check_call()?;
+      *val = CString::new(old_val.unwrap_or("".to_string()))?;
     }
     let store = NixStore::new(ctx.clone(), store_path, self.store_params.clone())?;
     let state = NixEvalState::new(store, self)?;
     // we need to unset the keys, in order for them to not leak
     // as the `setting_set` affects the globalConfig
-    for (key, _) in settings.iter() {
-      let old_val = CString::new("")?;
+    for (key, old_val) in settings.iter() {
       unsafe {
         setting_set(ctx.ptr(), key.as_ptr(), old_val.as_ptr());
         // ctx.check_call()?;
