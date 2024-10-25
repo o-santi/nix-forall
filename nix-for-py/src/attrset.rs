@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard}};
 
 use nix_for_rust::term::{NixAttrSet, NixItemsIterator, NixNamesIterator, Repr};
-use pyo3::prelude::*;
+use pyo3::{exceptions::PyKeyError, prelude::*};
 use anyhow::Result;
 
 use crate::nix_term_to_py;
@@ -32,7 +32,7 @@ impl PyNixAttrSet {
 
   fn __getattr__(&self, py: Python, name: &str) -> Result<PyObject> {
     let attrset = self.lock();
-    let term = attrset.get(name)?;
+    let term = attrset.get(name).map_err(|_| PyKeyError::new_err(name.to_string()))?;
     let obj = nix_term_to_py(py, term)?;
     Ok(obj)
   }

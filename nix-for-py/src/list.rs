@@ -1,5 +1,5 @@
 use std::sync::{Arc, Mutex, MutexGuard};
-use pyo3::prelude::*;
+use pyo3::{exceptions::PyIndexError, prelude::*};
 use nix_for_rust::term::{NixList, NixListIterator, Repr};
 use anyhow::Result;
 use crate::nix_term_to_py;
@@ -44,7 +44,7 @@ impl PyNixList {
 
   fn __getitem__(&self, py: Python, item: u32) -> Result<PyObject> {
     let list = self.lock();
-    let item = list.get_idx(item)?;
+    let item = list.get_idx(item).map_err(|_| PyIndexError::new_err(item))?;
     nix_term_to_py(py, item)
   }
 }
