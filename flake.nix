@@ -16,7 +16,6 @@
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
-      inputs.flake-utils.follows = "flake-utils";
     };
     nix.url = "github:nixos/nix/ed129267dcd7dd2cce48c09b17aefd6cfc488bcd"; # before splitting libnixflake
   };
@@ -45,6 +44,18 @@
           "pyo3-build-config 0.22.4 (registry+https://github.com/rust-lang/crates.io-index)" = old: {
             nativeBuildInputs = [ python ];
             propagatedBuildInputs = [ python ];
+          };
+          "zerovec-derive 0.10.3 (registry+https://github.com/rust-lang/crates.io-index)" = old: {
+            procMacro = true;
+          };
+          "yoke-derive 0.7.5 (registry+https://github.com/rust-lang/crates.io-index)" = old: {
+            procMacro = true;
+          };
+          "zerofrom-derive 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)" = old: {
+            procMacro = true;
+          };
+          "doctest-file 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = old: {
+            procMacro = true;
           };
           "nix-for-rust" = old: {
             preBuild = bindgen_args;
@@ -91,7 +102,8 @@
       devShells.default = with pkgs; mkShell {
         LIBCLANG_PATH = "${libclang}/lib";
         buildInputs = [
-          (python3.withPackages (p: [ p.nix-for-py ]))
+          (python3# .withPackages (p: [ p.nix-for-py ])
+          )
           gdb
           pkg-config
           nix

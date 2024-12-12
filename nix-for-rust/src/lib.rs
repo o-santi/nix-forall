@@ -22,5 +22,6 @@ pub mod error;
 pub mod settings;
 mod bindings;
 mod utils;
+mod eval_cache;
 
 pub use utils::get_nix_version;

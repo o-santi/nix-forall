@@ -10,5 +10,12 @@ pkg-config = "0.3.30"
 
 [dependencies]
 anyhow = "1.0.83"
+blake3 = "1.5.5"
+byteorder = "1.5.0"
+futures-util = "0.3.31"
 home = "0.5.9"
+interprocess = "2.2.2"
+nix = { version = "0.29.0", features = ["process", "ptrace", "fs", "signal"] }
+sqlx = { version = "0.8.2", features = [ "runtime-tokio", "sqlite", "migrate" ] }
 thiserror = "1.0.60"
+tokio = { version = "1.42.0", features = ["rt", "rt-multi-thread"] }

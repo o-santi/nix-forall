@@ -252,11 +252,11 @@
     "registry-crates-io": {
       "flake": false,
       "locked": {
-        "lastModified": 1728929534,
-        "narHash": "sha256-o9DGdpJZ26J0qNeb7HENnS7skP/6jylie526/4WFIME=",
+        "lastModified": 1733762580,
+        "narHash": "sha256-N6jd6xSMMz3Moko0o80uVMeuPqN7pzv+wSIbO7j59mM=",
         "owner": "rust-lang",
         "repo": "crates.io-index",
-        "rev": "5e6bd748cda0986dfb00ba743243c6635c9b46d5",
+        "rev": "fc07f939b72e22fffa79a2e1e95c0d019f9bbbd6",
         "type": "github"
       },
       "original": {
@@ -277,19 +277,16 @@
     },
     "rust-overlay": {
       "inputs": {
-        "flake-utils": [
-          "flake-utils"
-        ],
         "nixpkgs": [
           "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1715307487,
-        "narHash": "sha256-yuDAys3JuJmhQUQGMMsl3BDQNZUYZDw0eA71OVh9FeY=",
+        "lastModified": 1733711706,
+        "narHash": "sha256-uDfJ/TrLLqrtoNzfPODDOVyZ+JWsJfd5T1r7xuE6h6g=",
         "owner": "oxalica",
         "repo": "rust-overlay",
-        "rev": "ec7a7caf50877bc32988c82653d6b3e6952a8c3f",
+        "rev": "4eb3f096e14431bd0ab4cca039f9c9d77331cbfc",
         "type": "github"
       },
       "original": {
