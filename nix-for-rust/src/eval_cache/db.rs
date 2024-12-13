@@ -16,12 +16,15 @@ static TOKIO_RT: LazyLock<Runtime> = LazyLock::new(|| {
 });
 
 static SQLITE_POOL: LazyLock<Pool<Sqlite>> = LazyLock::new(|| {
-  let mut cache_directory = home::home_dir().unwrap_or(Path::new("/tmp").to_path_buf());
-  cache_directory.push(".cache");
-  cache_directory.push("nix-for-rust");
-  cache_directory.push("eval-cache");
-  cache_directory.push("sqlite-v1.db");
-  TOKIO_RT.block_on(async { setup_db(cache_directory.as_path().to_string_lossy()).await.expect("Could not run database setup") })
+  let cache_directory = home::home_dir()
+    .unwrap_or(Path::new("/tmp").to_path_buf())
+    .join(".cache")
+    .join("nix-for-rust")
+    .join("eval-cache");
+  std::fs::create_dir_all(&cache_directory).expect("Could not create cache directory");
+  let sqlite_file = cache_directory.join("sqlite-v1.db");
+  let db_url = sqlite_file.as_path().to_string_lossy();
+  TOKIO_RT.block_on(async { setup_db(db_url).await.expect("Could not run database setup") })
 });
 
 pub fn query_attr_in_cache(file_attr: &FileAttribute) -> Result<Option<String>> {
