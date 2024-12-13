@@ -71,6 +71,9 @@ impl NixEvalState {
           let mut output = String::new();
           BufReader::new(receiver).read_line(&mut output)?;
           output = String::from(output.trim());
+          if output == "" {
+            return Err(anyhow::format_err!("Error while evaluating expression"));
+          };
           db::insert_evaluation_output(&file_attribute, input_files.into_iter().collect(), &output)?;
           Ok(output)
         }
