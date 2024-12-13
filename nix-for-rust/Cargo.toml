@@ -10,7 +10,7 @@ pkg-config = "0.3.30"
 
 [dependencies]
 anyhow = "1.0.83"
-blake3 = "1.5.5"
+blake3 = { version = "1.5.5", features = ["mmap"] }
 byteorder = "1.5.0"
 futures-util = "0.3.31"
 home = "0.5.9"

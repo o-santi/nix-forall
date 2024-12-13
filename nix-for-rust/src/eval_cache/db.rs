@@ -9,11 +9,19 @@ use super::FileAttribute;
 use tokio::runtime::Runtime;
 
 static TOKIO_RT: LazyLock<Runtime> = LazyLock::new(|| {
-  tokio::runtime::Runtime::new().expect("Could not initialize tokio runtime")
+  tokio::runtime::Builder::new_current_thread()
+    .enable_time()
+    .build()
+    .expect("Could not initialize tokio runtime")
 });
 
 static SQLITE_POOL: LazyLock<Pool<Sqlite>> = LazyLock::new(|| {
-  TOKIO_RT.block_on(async { setup_db("./sqlite.db").await.expect("Could not run database setup") })
+  let mut cache_directory = home::home_dir().unwrap_or(Path::new("/tmp").to_path_buf());
+  cache_directory.push(".cache");
+  cache_directory.push("nix-for-rust");
+  cache_directory.push("eval-cache");
+  cache_directory.push("sqlite-v1.db");
+  TOKIO_RT.block_on(async { setup_db(cache_directory.as_path().to_string_lossy()).await.expect("Could not run database setup") })
 });
 
 pub fn query_attr_in_cache(file_attr: &FileAttribute) -> Result<Option<String>> {
@@ -30,8 +38,6 @@ pub async fn setup_db<P: AsRef<str>>(database_url: P) -> Result<SqlitePool> {
     .journal_mode(SqliteJournalMode::Wal)
     .synchronous(SqliteSynchronous::Normal)
     .pragma("mmap_size", "134217728")
-    .pragma("journal_size_limit", "27103364")
-    .pragma("cache_size", "2000")
     .create_if_missing(true);
   let pool = SqlitePool::connect_with(conn_options).await?;
   sqlx::migrate!("./src/eval_cache/migrations").run(&pool).await?;
@@ -48,7 +54,7 @@ pub fn hash_files(files: &[PathBuf]) -> Result<blake3::Hash> {
         hasher.update(entry?.path().as_os_str().as_encoded_bytes());
       }
     } else {
-      hasher.update(&std::fs::read(file)?);
+      hasher.update_mmap(&file)?;
     }
   }
   Ok(hasher.finalize())
