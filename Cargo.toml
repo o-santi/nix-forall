@@ -1,3 +1,3 @@
 [workspace]
-members = ["nix-for-rust", "nix-for-py"]
+members = ["nix-for-rust", "nix-for-py", "mx"]
 resolver = "2"

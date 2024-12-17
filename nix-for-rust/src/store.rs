@@ -1,7 +1,7 @@
 use crate::error::{handle_nix_error, NixError};
 use crate::term::NixEvalError;
 use crate::utils::{callback_get_result_string, callback_get_result_string_data, read_into_hashmap};
-use crate::bindings::{c_context, c_context_create, NIX_OK, err_code, store_free, store_get_version, store_open, store_parse_path, store_realise, Store, StorePath};
+use crate::bindings::{c_context, c_context_create, err, err_code, store_free, store_get_version, store_open, store_parse_path, store_realise, Store, StorePath};
 use std::collections::HashMap;
 use std::ffi::{c_void, CString};
 use std::os::raw::c_char;
@@ -34,7 +34,7 @@ impl NixContext {
 
   pub fn check_call(&self) -> std::result::Result<(), NixError> {
     let err = unsafe { err_code(self._ctx.as_ptr())};
-    if err != NIX_OK as i32 {
+    if err != err::NIX_OK as i32 {
       Err(handle_nix_error(err, self))
     } else {
       Ok(())

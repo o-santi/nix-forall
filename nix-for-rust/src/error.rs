@@ -1,5 +1,5 @@
 use crate::utils::{callback_get_result_string, callback_get_result_string_data};
-use crate::bindings::{err, err_info_msg, err_msg, err_name, NIX_ERR_KEY, NIX_ERR_NIX_ERROR, NIX_ERR_OVERFLOW, NIX_ERR_UNKNOWN};
+use crate::bindings::{err, err_info_msg, err_msg, err_name};
 use crate::store::NixContext;
 use std::fmt::Display;
 use std::ffi::{c_uint, CStr};
@@ -7,7 +7,7 @@ use thiserror::Error;
 
 #[derive(Error)]
 pub struct NixError {
-  code: err,
+  code: err::Type,
   msg: String,
   kind: NixErrorKind
 }
@@ -41,7 +41,7 @@ impl Display for NixError {
   }
 }
 
-pub fn handle_nix_error(error: err, ctx: &NixContext) -> NixError {
+pub fn handle_nix_error(error: err::Type, ctx: &NixContext) -> NixError {
   let msg= unsafe {
     let mut len : c_uint = 0;
     let extra_ctx = NixContext::default();
@@ -50,10 +50,10 @@ pub fn handle_nix_error(error: err, ctx: &NixContext) -> NixError {
     c_str.to_str().expect("Error msg is not a valid string").to_owned()
   };
   let kind = match error {
-    NIX_ERR_KEY => NixErrorKind::KeyError,
-    NIX_ERR_OVERFLOW => NixErrorKind::OverflowError,
-    NIX_ERR_UNKNOWN => NixErrorKind::UnknownError,
-    NIX_ERR_NIX_ERROR => {
+    err::NIX_ERR_KEY => NixErrorKind::KeyError,
+    err::NIX_ERR_OVERFLOW => NixErrorKind::OverflowError,
+    err::NIX_ERR_UNKNOWN => NixErrorKind::UnknownError,
+    err::NIX_ERR_NIX_ERROR => {
       let temp_ctx = NixContext::default();
       let mut name: anyhow::Result<String> = Err(anyhow::anyhow!("Nix C API didn't return string"));
       unsafe {

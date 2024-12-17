@@ -17,7 +17,7 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nix.url = "github:nixos/nix/ed129267dcd7dd2cce48c09b17aefd6cfc488bcd"; # before splitting libnixflake
+    nix.url = "github:nixos/nix"; # before splitting libnixflake
   };
 
   outputs = inputs @ { nixpkgs, flake-utils, nocargo, rust-overlay, ... }:
@@ -26,7 +26,8 @@
         overlays = [ (import rust-overlay) nix-for-py-overlay ];
         inherit system;
       };
-      nix = inputs.nix.packages.${system}.default;
+      nix = inputs.nix.packages.${system};
+      nix-deps = with nix; [ nix-store-c nix-expr-c nix-util-c ];
       bindgen_args = with pkgs; ''
           export BINDGEN_EXTRA_CLANG_ARGS="$(< ${stdenv.cc}/nix-support/libc-crt1-cflags) \
             $(< ${stdenv.cc}/nix-support/libc-cflags) \
@@ -60,11 +61,11 @@
           "nix-for-rust" = old: {
             preBuild = bindgen_args;
             LIBCLANG_PATH = "${libclang}/lib";
-            buildInputs = [ libclang nix ];
-            nativeBuildInputs = [ pkg-config nix ];
+            buildInputs = [ libclang ] ++ nix-deps;
+            nativeBuildInputs = [ pkg-config ] ++ nix-deps;
           };
-          "nix-for-py" = old: with nix; {
-            nativeBuildInputs = [ pkg-config nix ];
+          "nix-for-py" = old: {
+            nativeBuildInputs = [ pkg-config ] ++ nix-deps;
           };
         };
       };
@@ -106,12 +107,11 @@
           )
           gdb
           pkg-config
-          nix
           libclang
           (rust-bin.stable.latest.default.override {
             extensions = ["rust-src" "rust-analyzer"];
           })
-        ];
+        ] ++ nix-deps;
         shellHook=bindgen_args;
       };
     });
