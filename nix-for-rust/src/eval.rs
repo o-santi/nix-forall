@@ -84,8 +84,8 @@ impl NixEvalState {
     val.to_nix(self).map_err(|err: NixEvalError| anyhow::anyhow!(err))
   }
 
-  pub fn eval_file(&mut self, file: &std::path::Path) -> Result<NixTerm> {
-    let contents = std::fs::read_to_string(file)?;
+  pub fn eval_file<P: AsRef<std::path::Path>>(&mut self, file: P) -> Result<NixTerm> {
+    let contents = std::fs::read_to_string(&file)?;
     let realpath = std::fs::canonicalize(file)?;
     let cwd = if realpath.is_dir() {
       realpath

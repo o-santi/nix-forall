@@ -20,10 +20,10 @@ struct FileAttribute {
 }
 
 impl FileAttribute {
-  pub fn new<'s, I: IntoIterator<Item=&'s str>>(path: PathBuf, accessor_path: I) -> Result<Self> {
+  pub fn new<'s, I: IntoIterator<Item=&'s str>, P: AsRef<Path>>(path: P, accessor_path: I) -> Result<Self> {
     Ok(FileAttribute {
       hash: blake3::hash(&std::fs::read(&path)?),
-      path,
+      path: std::fs::canonicalize(path)?,
       accessor_path: accessor_path.into_iter().map(String::from).collect()
     })
   }
@@ -31,7 +31,7 @@ impl FileAttribute {
 
 impl NixEvalState {
 
-  fn evaluate_traced<'s, I: IntoIterator<Item=&'s str>>(&mut self, file: &Path, accessor_path: I, mut sender: Sender) {
+  fn evaluate_traced<'s, I: IntoIterator<Item=&'s str>, P: AsRef<Path>>(&mut self, file: P, accessor_path: I, mut sender: Sender) {
     ptrace::traceme().unwrap();
     signal::raise(signal::Signal::SIGSTOP).unwrap();
     let path = accessor_path
@@ -55,8 +55,8 @@ impl NixEvalState {
     }
   }
 
-  pub fn eval_attr_from_file<'s, I: IntoIterator<Item=&'s str> + Clone>(&mut self, file: &Path, accessor_path: I) -> Result<String> {
-    let file_attribute = FileAttribute::new(file.to_path_buf(), accessor_path.clone())?;
+  pub fn eval_attr_from_file<'s, I: IntoIterator<Item=&'s str> + Clone, P: AsRef<Path>>(&mut self, file: P, accessor_path: I) -> Result<String> {
+    let file_attribute = FileAttribute::new(&file, accessor_path.clone())?;
     if let Some(p) = db::query_attr_in_cache(&file_attribute)? {
       Ok(p)
     } else {
