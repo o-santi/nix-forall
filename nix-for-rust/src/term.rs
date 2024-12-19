@@ -25,7 +25,9 @@ pub enum NixEvalError {
   #[error("Index out of bounds!")]
   IndexOutOfBounds,
   #[error("Nix returned invalid string")]
-  InvalidString
+  InvalidString,
+  #[error("Invalid path")]
+  InvalidPath(String)
 }
 
 pub type NixResult<T> = Result<T, NixEvalError>;
@@ -179,8 +181,10 @@ impl NixAttrSet {
     let term_type = self.get("type").map_err(|_| NixEvalError::NotADerivation)?;
     let NixTerm::String(s) = term_type else { return Err(NixEvalError::NotADerivation) };
     if &s == "derivation" {
-      let Ok(NixTerm::String (path)) = self.get("drvPath") else { return Err(NixEvalError::NotADerivation) };
-      self.0._state.store.build(&path)
+      let drv = self.get("drvPath")?;
+      let path = drv.as_string()?;
+      let store_path = self.0._state.store.parse_path(&s).map_err(|_| NixEvalError::InvalidPath(path))?;
+      self.0._state.store.build(&store_path)
     } else {
       Err(NixEvalError::NotADerivation)
     }
