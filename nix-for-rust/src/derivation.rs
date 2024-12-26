@@ -14,7 +14,7 @@ use nom::{Finish, IResult, Parser};
 type ParseRes<'s, T> = IResult<&'s str, T, VerboseError<&'s str>>;
 
 #[derive(Debug)]
-enum HashAlgorithm {
+pub enum HashAlgorithm {
   Md5,
   Sha1,
   Sha256,
@@ -34,7 +34,7 @@ impl HashAlgorithm {
 }
 
 #[derive(Debug)]
-enum ContentAddressedMethod {
+pub enum ContentAddressedMethod {
   NixArchive,
   Git,
   Text,
@@ -56,7 +56,7 @@ impl ContentAddressedMethod {
 }
 
 #[derive(Debug)]
-enum DerivationOutput {
+pub enum DerivationOutput {
   Deferred,
   InputAddressed {
     path: NixStorePath,
@@ -116,8 +116,8 @@ pub struct Derivation {
 impl DerivationOutput {
   fn new(store: &NixStore, path: &str, hash_algo: &str, hash: &str) -> Result<Self> {
     if !hash_algo.is_empty() {
-      let (hash, method) = ContentAddressedMethod::parse(hash_algo);
-      let Some(hash_algo) = HashAlgorithm::parse(hash) else {
+      let (rest, method) = ContentAddressedMethod::parse(hash_algo);
+      let Some(hash_algo) = HashAlgorithm::parse(rest) else {
         anyhow::bail!("Unrecognized hash algorithm");
       };
       if hash == "impure" {
@@ -235,14 +235,15 @@ fn parse_derivation<'store, 'src>(store: &'store NixStore, name: String, input: 
   Ok((input, drv))
 }
 
-impl Derivation {
-  pub fn from_path(store: &NixStore, drv_path: &NixStorePath) -> Result<Self> {
+impl NixStore {
+  pub fn parse_derivation(&self, drv_path: &str) -> Result<Derivation> {
+    let drv_path = self.parse_path(drv_path)?;
     let content = std::fs::read_to_string(&drv_path.path)?;
     let drv_name = drv_path.name()?;
     let name = drv_name
       .strip_suffix(".drv")
       .ok_or_else(|| anyhow::format_err!("Path is not derivation."))?;
-    let (_, drv) = parse_derivation(store, name.to_string(), &content)
+    let (_, drv) = parse_derivation(self, name.to_string(), &content)
       .finish()
       .map_err(|e| anyhow::format_err!("{}", nom::error::convert_error(content.as_str(), e)))?;
     Ok(drv)
