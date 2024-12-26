@@ -1016,6 +1016,7 @@ dependencies = [
  "anyhow",
  "clap",
  "nix-for-rust",
+ "serde",
  "serde_json",
 ]
 
@@ -1052,6 +1053,7 @@ dependencies = [
  "home",
  "interprocess",
  "nix",
+ "nom",
  "pkg-config",
  "sqlx",
  "thiserror",

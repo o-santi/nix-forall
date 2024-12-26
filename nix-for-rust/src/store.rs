@@ -5,6 +5,7 @@ use crate::bindings::{c_context, c_context_create, err, err_code, store_free, st
 use std::collections::HashMap;
 use std::ffi::{c_void, CString};
 use std::os::raw::c_char;
+use std::path::{Path, PathBuf};
 use std::ptr::{null_mut, NonNull};
 use anyhow::Result;
 use std::rc::Rc;
@@ -48,8 +49,10 @@ pub struct NixStore {
   pub _store: Rc<StoreWrapper>
 }
 
+#[derive(Debug)]
 pub struct NixStorePath {
-  _path: NonNull<StorePath>
+  pub path: PathBuf,
+  _ptr: NonNull<StorePath>
 }
 
 pub struct StoreWrapper(NonNull<Store>);
@@ -93,12 +96,13 @@ impl NixStore {
 
   pub fn parse_path(&self, path: &str) -> Result<NixStorePath> {
     let c_path = CString::new(path)?;
-    let path = unsafe {
+    let path_ptr = unsafe {
       store_parse_path(self.ctx._ctx.as_ptr(), self.store_ptr(), c_path.as_ptr())
     };
     self.ctx.check_call()?;
     Ok(NixStorePath {
-      _path: NonNull::new(path)
+      path: Path::new(path).to_path_buf(),
+      _ptr: NonNull::new(path_ptr)
         .ok_or_else(|| anyhow::format_err!("store_parse_path returned null"))?
     })
   }
@@ -121,7 +125,7 @@ impl NixStore {
 
 impl NixStorePath {
   fn as_ptr(&self) -> *mut StorePath {
-    self._path.as_ptr()
+    self._ptr.as_ptr()
   }
 
   pub fn name(&self) -> Result<String> {

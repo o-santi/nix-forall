@@ -19,6 +19,9 @@ blake3 = { version = "1.5.5", features = ["mmap"], optional = true }
 interprocess = { version = "2.2.2", optional = true }
 sqlx = { version = "0.8.2", features = [ "runtime-tokio", "sqlite", "migrate" ], optional = true}
 tokio = { version = "1.42.0", features = ["rt", "rt-multi-thread"], optional = true }
+nom = { version = "7.1.3", features = ["alloc"], optional = true }
 
 [features]
+default = ["eval-cache", "derivation"]
 eval-cache = ["dep:sqlx", "dep:nix", "dep:blake3", "dep:tokio", "dep:interprocess"]
+derivation = ["dep:nom"]

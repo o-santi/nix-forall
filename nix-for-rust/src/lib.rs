@@ -24,5 +24,7 @@ mod bindings;
 mod utils;
 #[cfg(feature="eval-cache")]
 mod eval_cache;
+#[cfg(feature="derivation")]
+pub mod derivation;
 
 pub use utils::get_nix_version;
