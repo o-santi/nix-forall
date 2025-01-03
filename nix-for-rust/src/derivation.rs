@@ -222,7 +222,7 @@ fn parse_derivation<'store, 'src>(store: &'store NixStore, name: String, input: 
   let (input, env) = list(parse_pair)(input)?;
   let (input, _) = tag(")")(input)?;
   let drv = Derivation {
-    version: DerivationVersion::Traditional,
+    version,
     name,
     outputs: outputs.into_iter().collect(),
     input_srcs: input_srcs.into_iter().collect(),
