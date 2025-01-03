@@ -231,7 +231,7 @@ fn parse_derivation<'store, 'src>(store: &'store NixStore, name: String, input: 
     builder: Path::new(builder).to_path_buf(),
     args: args.into_iter().map(str::to_string).collect(),
     env: env.into_iter().collect(),
-};
+  };
   Ok((input, drv))
 }
 
