@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use crate::store::{NixStore, NixStorePath};
 use anyhow::Result;
-use nom::bytes::complete::{escaped, tag};
+use nom::bytes::complete::{escaped_transform, tag};
 use nom::combinator::{fail, opt, value};
 use nom::error::VerboseError;
 use nom::multi::separated_list0;
@@ -156,11 +156,17 @@ fn parse_input(input: &str, version: DerivationVersion) -> ParseRes<(String, Inp
   Ok((input, (name.to_string(), input_drv)))
 }
 
-fn string<'src>(input: &'src str) -> ParseRes<'src, &'src str> {
+fn string<'src>(input: &'src str) -> ParseRes<'src, String> {
   let (input, _) = char('"')(input)?;
-  let (input, s) = opt(escaped(none_of("\"\\"), '\\', one_of("\"ntr\\")))(input)?;
+  let (input, s) = opt(escaped_transform(none_of("\"\\"), '\\', alt((
+      value("\\", tag("\\")),
+      value("\"", tag("\"")),
+      value("\n", tag("n")),
+      value("\r", tag("r")),
+      value("\t", tag("t")),
+  ))))(input)?;
   let (input, _) = char('"')(input)?;
-  Ok((input, s.unwrap_or("")))
+  Ok((input, s.unwrap_or("".to_string())))
 }
 
 fn parse_drv_output<'store, 'src>(store: &'store NixStore, input: &'src str) -> ParseRes<'src, (String, DerivationOutput)> {
@@ -173,7 +179,7 @@ fn parse_drv_output<'store, 'src>(store: &'store NixStore, input: &'src str) -> 
   let (input, _) = tag(",")(input)?;
   let (input, hash) = string(input)?;
   let (input, _) = tag(")")(input)?;
-  let Ok(drv) = DerivationOutput::new(store, path, hash_algo, hash) else {
+  let Ok(drv) = DerivationOutput::new(store, &path, &hash_algo, &hash) else {
     return fail(input);
   };
   Ok((input, (name.to_string(), drv)))
@@ -228,8 +234,8 @@ fn parse_derivation<'store, 'src>(store: &'store NixStore, name: String, input: 
     input_srcs: input_srcs.into_iter().collect(),
     input_drvs: input_drvs.into_iter().collect(),
     platform: platform.to_string(),
-    builder: Path::new(builder).to_path_buf(),
-    args: args.into_iter().map(str::to_string).collect(),
+    builder: Path::new(&builder).to_path_buf(),
+    args,
     env: env.into_iter().collect(),
   };
   Ok((input, drv))
