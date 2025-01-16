@@ -3,7 +3,7 @@ use std::ffi::CString;
 use anyhow::Result;
 
 use crate::eval::NixEvalState;
-use crate::bindings::{libexpr_init, libstore_init_no_load_config, libutil_init, setting_get, setting_set};
+use crate::bindings::{libexpr_init, libstore_init_no_load_config, setting_get, setting_set};
 use crate::store::{NixContext, NixStore};
 use crate::utils::{callback_get_result_string, callback_get_result_string_data};
 

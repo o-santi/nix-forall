@@ -8,7 +8,6 @@ use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 use std::ptr::{null_mut, NonNull};
 use anyhow::Result;
-use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct NixContext {
@@ -43,10 +42,9 @@ impl NixContext {
   }
 }
 
-#[derive(Clone)]
 pub struct NixStore {
   pub ctx: NixContext,
-  pub _store: Rc<StoreWrapper>
+  pub _store: StoreWrapper
 }
 
 #[derive(Debug)]
@@ -84,7 +82,7 @@ impl NixStore {
       }
     };
     let store = NonNull::new(_store).ok_or(anyhow::anyhow!("nix_store_open returned NonNull"))?;
-    Ok(NixStore { ctx, _store: Rc::new(StoreWrapper(store)) })
+    Ok(NixStore { ctx, _store: StoreWrapper(store) })
   }
   
   pub fn version(&self) -> Result<String> {

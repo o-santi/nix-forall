@@ -1,4 +1,4 @@
-use crate::bindings::{alloc_value, expr_eval_from_string, gc_decref, gc_incref, state_create, state_free, EvalState, Value};
+use crate::bindings::{alloc_value, copy_value, expr_eval_from_string, gc_decref, state_create, state_free, EvalState, Value};
 use crate::settings::NixSettings;
 use crate::store::{NixContext, NixStore};
 use crate::term::{NixEvalError, NixTerm, ToNix};
@@ -7,15 +7,14 @@ use std::path::PathBuf;
 use std::ptr::NonNull;
 use std::ffi::{c_char, CString};
 use anyhow::Result;
-use std::rc::Rc;
 
-pub struct RawValue {           
-  pub _state: NixEvalState,
+pub struct RawValue<'state> {           
+  pub _state: &'state NixEvalState,
   pub value: NonNull<Value>
 }
 
-impl RawValue {
-  pub fn empty(state: NixEvalState) -> Self {
+impl<'state> RawValue<'state> {
+  pub fn empty(state: &'state NixEvalState) -> Self {
     let value = unsafe {
       alloc_value(state.store.ctx._ctx.as_ptr(), state.state_ptr())
     };
@@ -30,11 +29,10 @@ impl RawValue {
   }
 }
 
-#[derive(Clone)]
 pub struct NixEvalState {
   pub store: NixStore,
   pub settings: NixSettings,
-  pub _eval_state: Rc<StateWrapper>
+  pub _eval_state: StateWrapper
 }
 
 pub struct StateWrapper(pub NonNull<EvalState>);
@@ -61,17 +59,17 @@ impl NixEvalState {
     };
     ctx.check_call()?;
     let state = NonNull::new(state).ok_or(anyhow::format_err!("state_create return null pointer"))?;
-    Ok(NixEvalState { store, settings, _eval_state: Rc::new(StateWrapper(state)) })
+    Ok(NixEvalState { store, settings, _eval_state: StateWrapper(state) })
   }
 
-  pub fn eval_string(&mut self, expr: &str, cwd: PathBuf) -> Result<NixTerm> {
+  pub fn eval_string<'slf>(&'slf mut self, expr: &str, cwd: PathBuf) -> Result<NixTerm<'slf>> {
     let cstr = CString::new(expr)?;
     let current_dir = cwd.as_path()
       .to_str()
       .ok_or_else(|| anyhow::format_err!("Cannot get current directory"))?
       .to_owned();
     let current_dir = CString::new(current_dir)?;
-    let val = RawValue::empty(self.clone());
+    let val = RawValue::empty(self);
     unsafe {
       expr_eval_from_string(
         self.store.ctx.ptr(),
@@ -84,7 +82,7 @@ impl NixEvalState {
     val.to_nix(self).map_err(|err: NixEvalError| anyhow::anyhow!(err))
   }
 
-  pub fn eval_file<P: AsRef<std::path::Path>>(&mut self, file: P) -> Result<NixTerm> {
+  pub fn eval_file<'slf, P: AsRef<std::path::Path>>(&'slf mut self, file: P) -> Result<NixTerm<'slf>> {
     let contents = std::fs::read_to_string(&file)?;
     let realpath = std::fs::canonicalize(file)?;
     let cwd = if realpath.is_dir() {
@@ -95,7 +93,7 @@ impl NixEvalState {
     self.eval_string(&contents, cwd)
   }
 
-  pub fn eval_flake(&mut self, flake_path: &str) -> Result<NixTerm> {
+  pub fn eval_flake<'slf>(&'slf mut self, flake_path: &str) -> Result<NixTerm<'slf>> {
     let has_flakes = |attr| self.settings.get_setting(attr).map(|s| s.contains("flakes")).unwrap_or(false);
     let is_flake_enabled = has_flakes("extra-experimental-features") || has_flakes("experimental-features");
     if !is_flake_enabled {
@@ -128,7 +126,7 @@ impl Drop for StateWrapper {
   }
 }
 
-impl Drop for RawValue {
+impl<'state> Drop for RawValue<'state> {
   fn drop(&mut self) {
     unsafe {
       gc_decref(self._state.store.ctx._ctx.as_ptr(), self.value.as_ptr() as *mut c_void);
@@ -137,11 +135,13 @@ impl Drop for RawValue {
 }
 
 
-impl Clone for RawValue {
+impl<'state> Clone for RawValue<'state> {
   fn clone(&self) -> Self {
+    let ctx = self._state.store.ctx.ptr();
+    let new_val = RawValue::empty(self._state);
     unsafe {
-      gc_incref(self._state.store.ctx._ctx.as_ptr(), self.value.as_ptr() as *const c_void);
+      copy_value(ctx, new_val.value.as_ptr(), self.value.as_ptr());
     }
-    RawValue { _state: self._state.clone(), value: self.value  }
+    new_val
   }
 }
