@@ -11,7 +11,7 @@ use crate::utils::{callback_get_result_string, callback_get_result_string_data};
 use thiserror::Error;
 
 /// Type of hashmaps that can be represented as a nix attrset
-pub type AttrSet<'str, 'state> = std::collections::HashMap<&'str str, NixTerm<'state>>;
+pub type AttrSet<'str> = std::collections::HashMap<&'str str, NixTerm>;
 
 /// An error that might happen when evaluating nix expressions.
 #[derive(Debug, Error)]
@@ -35,35 +35,35 @@ pub type NixResult<T> = Result<T, NixEvalError>;
 
 /// Wrapper around a pointer to nix attribute set.
 #[derive(Clone)]
-pub struct NixAttrSet<'state>(pub(crate) RawValue<'state>);
+pub struct NixAttrSet(pub(crate) RawValue);
 /// Wrapper around a pointer to nix list.
 #[derive(Clone)]
-pub struct NixList<'state>(pub(crate) RawValue<'state>);
+pub struct NixList(pub(crate) RawValue);
 /// Wrapper around a pointer to nix function.
 #[derive(Clone)]
-pub struct NixFunction<'state>(pub(crate) RawValue<'state>);
+pub struct NixFunction(pub(crate) RawValue);
 /// Wrapper around a pointer to nix thunk
 #[derive(Clone)]
-pub struct NixThunk<'state>(pub(crate) RawValue<'state>);
+pub struct NixThunk(pub(crate) RawValue);
 
 /// A nix term represented as a rust value.
-pub enum NixTerm<'state> {
+pub enum NixTerm {
   Null,
-  Thunk(NixThunk<'state>),
+  Thunk(NixThunk),
   Int(i64),
   Float(f64),
   Bool(bool),
-  List(NixList<'state>),
+  List(NixList),
   Path(PathBuf),
-  AttrSet(NixAttrSet<'state>),
+  AttrSet(NixAttrSet),
   String(String),
-  External(RawValue<'state>),
-  Function(NixFunction<'state>)
+  External(RawValue),
+  Function(NixFunction)
 }
 
   /// Conversion trait between rust objects and nix values.
-pub trait ToNix<'state> {
-  fn to_nix(self, eval_state: &'state NixEvalState) -> NixResult<NixTerm<'state>>;
+pub trait ToNix {
+  fn to_nix(self, eval_state: &NixEvalState) -> NixResult<NixTerm>;
 }
 
 /// Trait to print a nix term, which may throw errors during evaluation time.
@@ -77,14 +77,14 @@ pub trait Repr {
   }
 }
 
-impl<'state> ToNix<'state> for NixTerm<'state> {
-  fn to_nix(self, _eval_state: &'state NixEvalState) -> NixResult<NixTerm<'state>> {
+impl ToNix for NixTerm {
+  fn to_nix(self, _eval_state: &NixEvalState) -> NixResult<NixTerm> {
     Ok(self)
   }
 }
 
-impl<'state> ToNix<'state> for RawValue<'state> {
-  fn to_nix(self, _eval_state: &'state NixEvalState) -> NixResult<NixTerm<'state>> {
+impl ToNix for RawValue {
+  fn to_nix(self, _eval_state: &NixEvalState) -> NixResult<NixTerm> {
     let context = NixContext::default();
     let ctx = context.ptr();
     let value = self.value.as_ptr();
@@ -130,27 +130,27 @@ impl<'state> ToNix<'state> for RawValue<'state> {
 }
 
 /// Iterator over elements in a nix list
-pub struct NixListIterator<'state, 'val: 'state> {
+pub struct NixListIterator {
   pub len: u32,
-  pub(crate) val: &'val NixList<'state>,
+  pub(crate) val: NixList,
   pub(crate) idx: u32
 }
 
 /// Iterator over items in a nix attribute set
-pub struct NixItemsIterator<'state, 'val: 'state> {
+pub struct NixItemsIterator {
   pub len: u32,
-  pub(crate) val: &'val NixAttrSet<'state>,
+  pub(crate) val: NixAttrSet,
   pub(crate) idx: u32
 }
 
 /// Iterator over keys in a nix attribute set
-pub struct NixNamesIterator<'state, 'val: 'state> {
+pub struct NixNamesIterator {
   pub len: u32,
-  pub(crate) val: &'val NixAttrSet<'state>,
+  pub(crate) val: NixAttrSet,
   pub(crate) idx: u32
 }
 
-impl<'state> Repr for NixAttrSet<'state> {
+impl Repr for NixAttrSet {
   fn repr_rec(&self, s: &mut String) -> NixResult<()> {
     s.push('{');
     for (key, val) in self.items()? {
@@ -172,7 +172,7 @@ impl<'state> Repr for NixAttrSet<'state> {
   }
 }
 
-impl<'state> NixAttrSet<'state> {
+impl NixAttrSet {
   
   /// Tries to build an attribute set as if it was a derivation.
   /// 
@@ -193,9 +193,9 @@ impl<'state> NixAttrSet<'state> {
   /// Gets an attribute from the underlying attribute set.
   ///
   /// Throws [`RuntimeError(KeyError)`][NixError] when the key doesn't exist.
-  pub fn get(&self, name: &str) -> NixResult<NixTerm<'state>> {
+  pub fn get(&self, name: &str) -> NixResult<NixTerm> {
     let ctx = &self.0._state.store.ctx;
-    let state = self.0._state;
+    let state = &self.0._state;
     let name = CString::new(name).map_err(|_| NixEvalError::InvalidString)?;
     let val = unsafe {
       get_attr_byname(ctx.ptr(), self.0.value.as_ptr(), state.state_ptr(), name.as_ptr())
@@ -204,7 +204,7 @@ impl<'state> NixAttrSet<'state> {
     let value = NonNull::new(val).expect("get_attr_by_name returned null");
     let rawvalue = RawValue {
       value,
-      _state: state
+      _state: state.clone()
     };
     rawvalue.to_nix(&self.0._state)
   }
@@ -224,7 +224,7 @@ impl<'state> NixAttrSet<'state> {
   /// Returns an iterator over the keys of the attribute set.
   pub fn names(&self) -> NixResult<NixNamesIterator> {
     let iterator = NixNamesIterator {
-      val: self, len: self.len()?, idx: 0
+      val: self.clone(), len: self.len()?, idx: 0
     };
     Ok(iterator)
   }
@@ -232,16 +232,16 @@ impl<'state> NixAttrSet<'state> {
   /// Returns an iterator over the pairs `(String, NixTerm)` of the attribute set.
   pub fn items(&self) -> NixResult<NixItemsIterator> {
     let iterator = NixItemsIterator {
-      val: self, len: self.len()?, idx: 0
+      val: self.clone(), len: self.len()?, idx: 0
     };
     Ok(iterator)
   }
 }
 
-impl<'state> NixThunk<'state> {
+impl NixThunk {
   /// Forces the evaluation of the thunk and resolves it into
   /// a non-thunk term.
-  pub fn force(self) -> NixResult<NixTerm<'state>> {
+  pub fn force(self) -> NixResult<NixTerm> {
     let rawvalue = &self.0;
     let context = rawvalue._state.store.ctx.ptr();
     let state = rawvalue._state.state_ptr();
@@ -254,13 +254,13 @@ impl<'state> NixThunk<'state> {
   }
 }
 
-impl<'state> NixFunction<'state> {
+impl NixFunction {
 
   /// Calls the nix function with the argument converted to nix.
-  pub fn call_with<T: ToNix<'state>>(&self, arg: T) -> NixResult<NixTerm<'state>> {
+  pub fn call_with<T: ToNix>(&self, arg: T) -> NixResult<NixTerm> {
     let state = self.0._state.state_ptr();
     let arg = arg.to_nix(&self.0._state)?.to_raw_value(&self.0._state);
-    let ret = RawValue::empty(self.0._state);
+    let ret = RawValue::empty(self.0._state.clone());
     let ctx = NixContext::default();
     unsafe {
       value_call(ctx.ptr(), state, self.0.value.as_ptr(), arg.value.as_ptr(), ret.value.as_ptr());
@@ -270,7 +270,7 @@ impl<'state> NixFunction<'state> {
   }
 }
 
-impl<'state> NixList<'state> {
+impl NixList {
 
   /// How many elements are there in the list.
   pub fn len(&self) -> NixResult<u32> {
@@ -287,7 +287,7 @@ impl<'state> NixList<'state> {
   /// Returns the iterator over the elements in a list
   pub fn iter(&self) -> NixResult<NixListIterator> {
     let iterator = NixListIterator {
-      val: self, len: self.len()?, idx: 0
+      val: self.clone(), len: self.len()?, idx: 0
     };
     Ok(iterator)
   }
@@ -302,14 +302,14 @@ impl<'state> NixList<'state> {
     let elem = unsafe { get_list_byidx(raw._state.store.ctx.ptr(), raw.value.as_ptr(), raw._state.state_ptr(), idx as c_uint) };
     let elem = NonNull::new(elem).expect("get_list_byidx returned null");
     let rawvalue = RawValue {
-      _state: raw._state,
+      _state: raw._state.clone(),
       value: elem
     };
     rawvalue.to_nix(&raw._state)
   }
 }
 
-impl<'state> Repr for NixList<'state> {
+impl Repr for NixList {
   fn repr_rec(&self, s: &mut String) -> NixResult<()> {
     s.push('[');
     for t in self.iter()? {
@@ -328,7 +328,7 @@ impl<'state> Repr for NixList<'state> {
   }
 }
 
-impl<'state> NixTerm<'state> {
+impl NixTerm {
 
   /// Builds the term if the term is an attribute set, otherwise type error.
   pub fn build(&self) -> NixResult<HashMap<String, String>> {
@@ -383,10 +383,10 @@ impl<'state> NixTerm<'state> {
     }
   }
   
-  pub fn to_raw_value(self, _state: &'state NixEvalState) -> RawValue<'state> {
+  pub fn to_raw_value(self, _state: &NixEvalState) -> RawValue {
     let ctx = _state.store.ctx.ptr();
     let state = _state.state_ptr();
-    let mut rawval = RawValue::empty(_state);
+    let mut rawval = RawValue::empty(_state.clone());
     let val_ptr = rawval.value.as_ptr();
     match self {
       NixTerm::External(raw)  => { rawval = raw; }
@@ -424,7 +424,7 @@ impl<'state> NixTerm<'state> {
     rawval
   }
   
-  pub fn call_with<T: ToNix<'state>>(self, arg: T) -> NixResult<NixTerm<'state>> {
+  pub fn call_with<T: ToNix>(self, arg: T) -> NixResult<NixTerm> {
     if let NixTerm::Function(func) = self {
       func.call_with(arg)
     } else {
@@ -432,7 +432,7 @@ impl<'state> NixTerm<'state> {
     }
   }
   
-  pub fn get(&self, name: &str) -> NixResult<NixTerm<'state>> {
+  pub fn get(&self, name: &str) -> NixResult<NixTerm> {
     if let NixTerm::AttrSet(attrset) = self {
       attrset.get(name)
     } else {
@@ -485,7 +485,7 @@ impl<'state> NixTerm<'state> {
 
 }
 
-impl<'state> Repr for NixTerm<'state> {
+impl Repr for NixTerm {
   fn repr_rec(&self, s: &mut String) -> NixResult<()> {
     match self {
       NixTerm::Null => s.push_str("null"),
@@ -504,8 +504,8 @@ impl<'state> Repr for NixTerm<'state> {
   }
 }
 
-impl<'state, 'val: 'state> Iterator for NixListIterator<'val, 'state> {
-  type Item = NixResult<NixTerm<'state>>;
+impl Iterator for NixListIterator {
+  type Item = NixResult<NixTerm>;
   
   fn next(&mut self) -> Option<Self::Item> {
     if self.idx == self.len {
@@ -517,8 +517,8 @@ impl<'state, 'val: 'state> Iterator for NixListIterator<'val, 'state> {
   }
 }
 
-impl<'state, 'val: 'state> Iterator for NixItemsIterator<'state, 'val> {
-  type Item = (String, NixResult<NixTerm<'state>>);
+impl Iterator for NixItemsIterator {
+  type Item = (String, NixResult<NixTerm>);
   
   fn next(&mut self) -> Option<Self::Item> {
     if self.idx == self.len {
@@ -540,14 +540,14 @@ impl<'state, 'val: 'state> Iterator for NixItemsIterator<'state, 'val> {
     };
     let elem = NonNull::new(elem).expect("get_attr_byidx returned null");
     let rawvalue = RawValue {
-      _state: raw._state,
+      _state: raw._state.clone(),
       value: elem
     };
     Some((name, rawvalue.to_nix(&raw._state)))
   }
 }
 
-impl<'state, 'val: 'state> Iterator for NixNamesIterator<'state, 'val> {
+impl Iterator for NixNamesIterator {
   type Item = String;
   
   fn next(&mut self) -> Option<Self::Item> {
@@ -569,32 +569,32 @@ impl<'state, 'val: 'state> Iterator for NixNamesIterator<'state, 'val> {
   }
 }
 
-impl<'state> From<&str> for NixTerm<'state> {
+impl From<&str> for NixTerm {
   fn from(val: &str) -> Self {
     NixTerm::String(val.to_string())
   }
 }
 
-impl<'state> From<i64> for NixTerm<'state> {
+impl From<i64> for NixTerm {
   fn from(val: i64) -> Self {
     NixTerm::Int(val)
   }
 }
 
-impl<'state> From<PathBuf> for NixTerm<'state> {
+impl From<PathBuf> for NixTerm {
   fn from(val: PathBuf) -> Self {
     NixTerm::Path(val)
   }
 }
 
-impl<'state> From<bool> for NixTerm<'state> {
+impl From<bool> for NixTerm {
   fn from(val: bool) -> Self {
     NixTerm::Bool(val)
   }
 }
 
-impl<'state, T: ToNix<'state>> ToNix<'state> for Vec<T> {
-  fn to_nix(self, state: &'state NixEvalState) -> NixResult<NixTerm<'state>> {
+impl<T: ToNix> ToNix for Vec<T> {
+  fn to_nix(self, state: &NixEvalState) -> NixResult<NixTerm> {
     let ctx = state.store.ctx.ptr();
     let list_builder = unsafe {
       make_list_builder(ctx, state.state_ptr(), self.len())
@@ -605,14 +605,14 @@ impl<'state, T: ToNix<'state>> ToNix<'state> for Vec<T> {
         list_builder_insert(ctx, list_builder, idx as c_uint, value.value.as_ptr());
       }
     }
-    let value = RawValue::empty(state);
+    let value = RawValue::empty(state.clone());
     unsafe { make_list(ctx, list_builder, value.value.as_ptr()) };
     value.to_nix(state)
   }
 }
 
-impl<'state, S: AsRef<str>, T: ToNix<'state>> ToNix<'state> for HashMap<S, T> {
-  fn to_nix(self, state: &'state NixEvalState) -> NixResult<NixTerm<'state>> {
+impl<S: AsRef<str>, T: ToNix> ToNix for HashMap<S, T> {
+  fn to_nix(self, state: &NixEvalState) -> NixResult<NixTerm> {
     let ctx = state.store.ctx.ptr();
     let bindings_builder = unsafe {
       make_bindings_builder(ctx, state.state_ptr(), self.len())
@@ -627,7 +627,7 @@ impl<'state, S: AsRef<str>, T: ToNix<'state>> ToNix<'state> for HashMap<S, T> {
       state.store.ctx.check_call().unwrap();
     }
     let ctx = NixContext::default();
-    let value = RawValue::empty(state);
+    let value = RawValue::empty(state.clone());
     unsafe { make_attrs(ctx.ptr(), value.value.as_ptr(), bindings_builder) };
     ctx.check_call().unwrap();
     unsafe { bindings_builder_free(bindings_builder); }

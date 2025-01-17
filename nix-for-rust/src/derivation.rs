@@ -7,7 +7,7 @@ use nom::combinator::{fail, opt, value};
 use nom::error::VerboseError;
 use nom::multi::separated_list0;
 use nom::branch::alt;
-use nom::character::complete::{char, none_of};
+use nom::character::complete::{char, none_of, one_of};
 use nom::sequence::delimited;
 use nom::{Finish, IResult, Parser};
 
