@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use crate::eval::NixEvalState;
 use crate::store::{NixStore, NixStorePath};
-use crate::term::{NixResult, NixTerm, ToNix};
+use crate::term::{CollectToNix, NixAttrSet, NixList, NixResult, NixTerm, ToNix};
 use anyhow::Result;
 use nom::bytes::complete::{escaped_transform, tag};
 use nom::combinator::{fail, opt, value};
@@ -260,8 +260,16 @@ impl NixStore {
 
 impl ToNix for Derivation {
   fn to_nix(self, eval_state: &NixEvalState) -> NixResult<NixTerm> {
-    let mut args = HashMap::new();
-    args.insert("name", self.name);
-    todo!()
+    let mut args: HashMap<&str, NixTerm> = self.env
+      .iter()
+      .map(|(k, v)| (k.as_str(), v.into()))
+      .collect();
+    args.insert("name", self.name.into());
+    args.insert("builder", self.builder.into());
+    args.insert("system", self.platform.into());
+    args.insert("outputs", self.outputs.keys().collect_to_nix::<NixList>(eval_state)?.into());
+    let derivation = eval_state.eval_string("builtins.derivation", std::env::current_dir()
+      .expect("Could not get cwd")).expect("builtins.derivation should never fail");
+    derivation.call_with(args.into_iter().collect_to_nix::<NixAttrSet>(eval_state)?)
   }
 }

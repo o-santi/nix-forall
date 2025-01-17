@@ -581,6 +581,18 @@ impl Iterator for NixNamesIterator {
   }
 }
 
+impl From<String> for NixTerm {
+  fn from(val: String) -> Self {
+    NixTerm::String(val)
+  }
+}
+
+impl From<&String> for NixTerm {
+  fn from(val: &String) -> Self {
+    NixTerm::String(val.clone())
+  }
+}
+
 impl From<&str> for NixTerm {
   fn from(val: &str) -> Self {
     NixTerm::String(val.to_string())
