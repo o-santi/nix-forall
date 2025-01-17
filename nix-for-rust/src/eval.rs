@@ -1,14 +1,14 @@
-use crate::bindings::{alloc_value, expr_eval_from_string, gc_decref, gc_incref, state_create, state_free, EvalState, Value};
+use crate::bindings::{alloc_value, expr_eval_from_string, state_create, state_free, EvalState, Value};
 use crate::settings::NixSettings;
 use crate::store::{NixContext, NixStore};
 use crate::term::{NixEvalError, NixTerm, ToNix};
-use std::os::raw::c_void;
 use std::path::PathBuf;
 use std::ptr::NonNull;
 use std::ffi::{c_char, CString};
 use anyhow::Result;
 use std::rc::Rc;
 
+#[derive(Clone)]
 pub struct RawValue {           
   pub _state: NixEvalState,
   pub value: NonNull<Value>
@@ -64,7 +64,7 @@ impl NixEvalState {
     Ok(NixEvalState { store, settings, _eval_state: Rc::new(StateWrapper(state)) })
   }
 
-  pub fn eval_string(&mut self, expr: &str, cwd: PathBuf) -> Result<NixTerm> {
+  pub fn eval_string(&self, expr: &str, cwd: PathBuf) -> Result<NixTerm> {
     let cstr = CString::new(expr)?;
     let current_dir = cwd.as_path()
       .to_str()
@@ -84,7 +84,7 @@ impl NixEvalState {
     val.to_nix(self).map_err(|err: NixEvalError| anyhow::anyhow!(err))
   }
 
-  pub fn eval_file<P: AsRef<std::path::Path>>(&mut self, file: P) -> Result<NixTerm> {
+  pub fn eval_file<P: AsRef<std::path::Path>>(&self, file: P) -> Result<NixTerm> {
     let contents = std::fs::read_to_string(&file)?;
     let realpath = std::fs::canonicalize(file)?;
     let cwd = if realpath.is_dir() {
@@ -95,7 +95,7 @@ impl NixEvalState {
     self.eval_string(&contents, cwd)
   }
 
-  pub fn eval_flake(&mut self, flake_path: &str) -> Result<NixTerm> {
+  pub fn eval_flake(&self, flake_path: &str) -> Result<NixTerm> {
     let has_flakes = |attr| self.settings.get_setting(attr).map(|s| s.contains("flakes")).unwrap_or(false);
     let is_flake_enabled = has_flakes("extra-experimental-features") || has_flakes("experimental-features");
     if !is_flake_enabled {
@@ -125,23 +125,5 @@ impl Drop for StateWrapper {
     unsafe {
       state_free(self.0.as_ptr());
     }
-  }
-}
-
-impl Drop for RawValue {
-  fn drop(&mut self) {
-    unsafe {
-      gc_decref(self._state.store.ctx._ctx.as_ptr(), self.value.as_ptr() as *mut c_void);
-    }
-  }
-}
-
-
-impl Clone for RawValue {
-  fn clone(&self) -> Self {
-    unsafe {
-      gc_incref(self._state.store.ctx._ctx.as_ptr(), self.value.as_ptr() as *const c_void);
-    }
-    RawValue { _state: self._state.clone(), value: self.value  }
   }
 }
