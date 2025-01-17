@@ -61,10 +61,23 @@ pub enum NixTerm {
   Function(NixFunction)
 }
 
-  /// Conversion trait between rust objects and nix values.
+/// Conversion trait between rust objects and nix values.
 pub trait ToNix {
   fn to_nix(self, eval_state: &NixEvalState) -> NixResult<NixTerm>;
 }
+
+pub trait FromIterToNix<I>: Sized {
+  fn from_iter_to_nix<T>(iter: T, state: &NixEvalState) -> NixResult<Self>
+    where T: IntoIterator<Item=I> + ExactSizeIterator;
+}
+
+pub trait CollectToNix<T>: Iterator<Item=T> + Sized + ExactSizeIterator {
+  fn collect_to_nix<O: FromIterToNix<T>>(self, state: &NixEvalState) -> NixResult<O> {
+    O::from_iter_to_nix(self, state)
+  }
+}
+
+impl<T, I: Iterator<Item=T> + Sized + ExactSizeIterator> CollectToNix<T> for I {}
 
 /// Trait to print a nix term, which may throw errors during evaluation time.
 pub trait Repr {
@@ -77,9 +90,9 @@ pub trait Repr {
   }
 }
 
-impl ToNix for NixTerm {
+impl<N: Into<NixTerm>> ToNix for N {
   fn to_nix(self, _eval_state: &NixEvalState) -> NixResult<NixTerm> {
-    Ok(self)
+    Ok(self.into())
   }
 }
 
@@ -255,7 +268,6 @@ impl NixThunk {
 }
 
 impl NixFunction {
-
   /// Calls the nix function with the argument converted to nix.
   pub fn call_with<T: ToNix>(&self, arg: T) -> NixResult<NixTerm> {
     let state = self.0._state.state_ptr();
@@ -593,13 +605,26 @@ impl From<bool> for NixTerm {
   }
 }
 
-impl<T: ToNix> ToNix for Vec<T> {
-  fn to_nix(self, state: &NixEvalState) -> NixResult<NixTerm> {
+impl From<NixList> for NixTerm {
+  fn from(val: NixList) -> Self {
+    NixTerm::List(val)
+  }
+}
+
+impl From<NixAttrSet> for NixTerm {
+  fn from(val: NixAttrSet) -> Self {
+    NixTerm::AttrSet(val)
+  }
+}
+
+impl<N: ToNix> FromIterToNix<N> for NixList {
+  fn from_iter_to_nix<T>(iter: T, state: &NixEvalState) -> NixResult<Self>
+  where T: IntoIterator<Item=N> + ExactSizeIterator {
     let ctx = state.store.ctx.ptr();
     let list_builder = unsafe {
-      make_list_builder(ctx, state.state_ptr(), self.len())
+      make_list_builder(ctx, state.state_ptr(), iter.len())
     };
-    for (idx, elem) in self.into_iter().enumerate() {
+    for (idx, elem) in iter.into_iter().enumerate() {
       let value = elem.to_nix(state)?.to_raw_value(state);
       unsafe {
         list_builder_insert(ctx, list_builder, idx as c_uint, value.value.as_ptr());
@@ -607,18 +632,18 @@ impl<T: ToNix> ToNix for Vec<T> {
     }
     let value = RawValue::empty(state.clone());
     unsafe { make_list(ctx, list_builder, value.value.as_ptr()) };
-    value.to_nix(state)
+    Ok(NixList(value))
   }
 }
-
-impl<S: AsRef<str>, T: ToNix> ToNix for HashMap<S, T> {
-  fn to_nix(self, state: &NixEvalState) -> NixResult<NixTerm> {
+impl<S: AsRef<str>, N: ToNix> FromIterToNix<(S, N)> for NixAttrSet {
+  fn from_iter_to_nix<T>(iter: T, state: &NixEvalState) -> NixResult<Self>
+  where T: IntoIterator<Item=(S, N)> + ExactSizeIterator {
     let ctx = state.store.ctx.ptr();
     let bindings_builder = unsafe {
-      make_bindings_builder(ctx, state.state_ptr(), self.len())
+      make_bindings_builder(ctx, state.state_ptr(), iter.len())
     };
     state.store.ctx.check_call().unwrap();
-    for (key, val) in self.into_iter() {
+    for (key, val) in iter.into_iter() {
       let name = CString::new(key.as_ref()).expect("Key must be valid C string");
       let value = val.to_nix(state)?.to_raw_value(state);
       unsafe {
@@ -629,10 +654,19 @@ impl<S: AsRef<str>, T: ToNix> ToNix for HashMap<S, T> {
     let ctx = NixContext::default();
     let value = RawValue::empty(state.clone());
     unsafe { make_attrs(ctx.ptr(), value.value.as_ptr(), bindings_builder) };
-    ctx.check_call().unwrap();
+    ctx.check_call()?;
     unsafe { bindings_builder_free(bindings_builder); }
-    ctx.check_call().unwrap();
-    value.to_nix(state)
+    ctx.check_call()?;
+    Ok(NixAttrSet(value))
+  }
+}
+
+// TODO: re-implement without re-allocating
+impl<E, O: FromIterToNix<E>> FromIterToNix<NixResult<E>> for O {
+  fn from_iter_to_nix<T>(iter: T, state: &NixEvalState) -> NixResult<Self>
+  where T: IntoIterator<Item=NixResult<E>> + ExactSizeIterator {
+    let iter: Vec<E> = iter.into_iter().collect::<NixResult<_>>()?;
+    iter.into_iter().collect_to_nix(state)
   }
 }
 

@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use crate::eval::NixEvalState;
 use crate::store::{NixStore, NixStorePath};
+use crate::term::{NixResult, NixTerm, ToNix};
 use anyhow::Result;
 use nom::bytes::complete::{escaped_transform, tag};
 use nom::combinator::{fail, opt, value};
@@ -253,5 +255,13 @@ impl NixStore {
       .finish()
       .map_err(|e| anyhow::format_err!("{}", nom::error::convert_error(content.as_str(), e)))?;
     Ok(drv)
+  }
+}
+
+impl ToNix for Derivation {
+  fn to_nix(self, eval_state: &NixEvalState) -> NixResult<NixTerm> {
+    let mut args = HashMap::new();
+    args.insert("name", self.name);
+    todo!()
   }
 }
