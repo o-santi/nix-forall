@@ -9,7 +9,7 @@ use nom::combinator::{fail, opt, value};
 use nom::error::VerboseError;
 use nom::multi::separated_list0;
 use nom::branch::alt;
-use nom::character::complete::{char, none_of, one_of};
+use nom::character::complete::{char, none_of};
 use nom::sequence::delimited;
 use nom::{Finish, IResult, Parser};
 
@@ -267,9 +267,11 @@ impl ToNix for Derivation {
     args.insert("name", self.name.into());
     args.insert("builder", self.builder.into());
     args.insert("system", self.platform.into());
+    args.insert("args", self.args.into_iter().collect_to_nix::<NixList>(eval_state)?.into());
     args.insert("outputs", self.outputs.keys().collect_to_nix::<NixList>(eval_state)?.into());
     let derivation = eval_state.eval_string("builtins.derivation", std::env::current_dir()
-      .expect("Could not get cwd")).expect("builtins.derivation should never fail");
+      .expect("Could not get cwd"))
+      .expect("builtins.derivation should never fail");
     derivation.call_with(args.into_iter().collect_to_nix::<NixAttrSet>(eval_state)?)
   }
 }
