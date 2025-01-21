@@ -26,7 +26,7 @@ pub enum NixEvalError {
   IndexOutOfBounds,
   #[error("Nix returned invalid string")]
   InvalidString,
-  #[error("Invalid path")]
+  #[error("Invalid path '{0}'")]
   InvalidPath(String)
 }
 
