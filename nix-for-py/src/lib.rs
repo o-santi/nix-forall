@@ -9,7 +9,7 @@ use function::PyNixFunction;
 use list::PyNixList;
 use nix_evaluator::PyEvalState;
 use pyo3::{prelude::*, types::{PyList, PyDict}};
-use nix_for_rust::{eval::NixEvalState, settings::NixSettings, term::{NixEvalError, NixTerm, ToNix}};
+use nix_for_rust::{eval::NixEvalState, settings::NixSettings, term::{CollectToNix, NixAttrSet, NixEvalError, NixList, NixTerm, ToNix}};
 use nix_for_rust::term::NixResult;
 
 fn nix_term_to_py(py: Python, term: NixTerm) -> anyhow::Result<PyObject> {
@@ -28,9 +28,9 @@ fn nix_term_to_py(py: Python, term: NixTerm) -> anyhow::Result<PyObject> {
   }
 }
 
-struct PyTerm<'s, 'gil>(&'s Bound<'gil, PyAny>);
+struct PyTerm<'gil>(Bound<'gil, PyAny>);
 
-impl<'s, 'gil> ToNix for PyTerm<'s, 'gil> {
+impl<'gil> ToNix for PyTerm<'gil> {
   fn to_nix(self, eval_state: &NixEvalState) -> NixResult<NixTerm> {
     let obj = self.0;
     if obj.is_none() {
@@ -44,15 +44,13 @@ impl<'s, 'gil> ToNix for PyTerm<'s, 'gil> {
     } else if let Ok(b) = obj.extract::<bool>() {
       Ok(NixTerm::Bool(b))
     } else if let Ok(l) = obj.downcast::<PyList>() {
-      let items: Vec<NixTerm> = l
+      let items: NixList = l
         .into_iter()
-        .map(|p| PyTerm(&p).to_nix(eval_state))
-        .collect::<nix_for_rust::term::NixResult<_>>()?;
-      let term: NixTerm = items.to_nix(eval_state)?;
-      Ok(term)
+        .map(|p| PyTerm(p))
+        .collect_to_nix(eval_state)?;
+      Ok(items.into())
     } else if let Ok(d) = obj.downcast::<PyDict>() {
-      let items: HashMap<String, NixTerm> = d
-        .into_iter()
+      let items: NixAttrSet = d.into_iter()
         .map(|(key, val)| {
           let Ok(key) = key.extract::<String>() else {
             return Err(NixEvalError::TypeError {
@@ -60,12 +58,10 @@ impl<'s, 'gil> ToNix for PyTerm<'s, 'gil> {
               got: key.get_type().name().expect("Name shouldn't throw error").to_string()
             });
           };
-          let val = PyTerm(&val).to_nix(eval_state)?;
-          Ok((key, val))
+          Ok((key, PyTerm(val)))
         })
-        .collect::<NixResult<_>>()?;
-      let term: NixTerm = items.to_nix(eval_state)?;
-      Ok(term)
+        .collect_to_nix(eval_state)?;
+      Ok(items.into())
     } else if let Ok(d) = obj.extract::<PyNixAttrSet>() {
       let attr = d.lock();
       Ok(NixTerm::AttrSet(attr.clone()))

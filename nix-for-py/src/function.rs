@@ -30,7 +30,7 @@ impl PyNixFunction {
         NixTerm::Function(f) => Ok::<NixFunction, anyhow::Error>(f),
         _ => anyhow::bail!("Cannot call non-function argument")
       }?;
-      ret = f.call_with(PyTerm(&arg))?;
+      ret = f.call_with(PyTerm(arg))?;
     }
     Python::with_gil(|py| nix_term_to_py(py, ret))
   }

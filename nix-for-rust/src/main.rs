@@ -1,7 +1,7 @@
 use nix_for_rust::settings::NixSettings;
 
 pub fn main() -> anyhow::Result<()> {
-  let mut state = NixSettings::default()
+  let state = NixSettings::default()
     .with_setting("extra-experimental-features", "flakes")
     .with_default_store()?;
   let valid_pkgs = state.eval_flake("github:NixOS/nixpkgs")?
