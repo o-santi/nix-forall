@@ -1,12 +1,13 @@
 #![allow(non_upper_case_globals)]
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use std::ffi::{c_char, c_uint, CStr, CString};
 use std::ptr::NonNull;
 use std::path::PathBuf;
-use crate::bindings::{bindings_builder_free, bindings_builder_insert, get_attr_byidx, get_attr_byname, get_attr_name_byidx, get_attrs_size, get_bool, get_float, get_int, get_list_byidx, get_list_size, get_path_string, get_string, get_type, init_bool, init_float, init_int, init_null, init_path_string, init_string, list_builder_insert, make_attrs, make_bindings_builder, make_list, make_list_builder, value_call, value_force, ValueType};
+use crate::bindings::{bindings_builder_free, bindings_builder_insert, get_attr_byidx, get_attr_byname, get_attr_name_byidx, get_attrs_size, get_bool, get_float, get_int, get_list_byidx, get_list_size, get_path_string, get_string, get_type, init_bool, init_float, init_int, init_null, init_path_string, init_string, list_builder_insert, make_attrs, make_bindings_builder, make_list, make_list_builder, realised_string_get_store_path, realised_string_get_store_path_count, string_realise, value_call, value_force, ValueType};
 use crate::error::NixError;
-use crate::eval::{NixEvalState, RawValue};
-use crate::store::NixContext;
+use crate::eval::{NixEvalState, RawValue, ValueWrapper};
+use crate::store::{NixContext, NixStorePath};
 use crate::utils::{callback_get_result_string, callback_get_result_string_data};
 use thiserror::Error;
 
@@ -190,18 +191,26 @@ impl NixAttrSet {
   /// Tries to build an attribute set as if it was a derivation.
   /// 
   /// Throws [`NotADerivation`][NixEvalError] if the attrset is not a derivation
-  pub fn build(&self) -> NixResult<HashMap<String, String>> {
-    let term_type = self.get("type").map_err(|_| NixEvalError::NotADerivation)?;
-    let NixTerm::String(s) = term_type else { return Err(NixEvalError::NotADerivation) };
-    if &s == "derivation" {
-      let drv = self.get("drvPath")?;
-      let path = drv.as_string()?;
-      let store_path = self.0._state.store.parse_path(&s).map_err(|_| NixEvalError::InvalidPath(path))?;
-      self.0._state.store.build(&store_path)
-    } else {
-      Err(NixEvalError::NotADerivation)
-    }
-  }
+  pub fn realise(&self) -> NixResult<Vec<NixStorePath>> {
+    let ctx = self.0._state.store.ctx.ptr();
+    let realised_string = unsafe {
+      string_realise(ctx, self.0._state.state_ptr(), self.0.value.as_ptr(), false)
+    };
+    let path_count = unsafe {
+      realised_string_get_store_path_count(realised_string)
+    };
+    let store = &self.0._state.store;
+    let set: Vec<NixStorePath> = (0..path_count)
+      .map(move |i| {
+        let path = unsafe {
+          realised_string_get_store_path(realised_string, i)
+        };
+        NixStorePath::from_ptr(store, path as *mut _)
+      })
+      .collect::<anyhow::Result<_>>()
+      .map_err(|_| NixEvalError::NotADerivation)?;
+    Ok(set)
+  }    
 
   /// Gets an attribute from the underlying attribute set.
   ///
@@ -216,7 +225,7 @@ impl NixAttrSet {
     ctx.check_call()?;
     let value = NonNull::new(val).expect("get_attr_by_name returned null");
     let rawvalue = RawValue {
-      value,
+      value: Rc::new(ValueWrapper(value)),
       _state: state.clone()
     };
     rawvalue.to_nix(&self.0._state)
@@ -315,7 +324,7 @@ impl NixList {
     let elem = NonNull::new(elem).expect("get_list_byidx returned null");
     let rawvalue = RawValue {
       _state: raw._state.clone(),
-      value: elem
+      value: Rc::new(ValueWrapper(elem))
     };
     rawvalue.to_nix(&raw._state)
   }
@@ -343,9 +352,9 @@ impl Repr for NixList {
 impl NixTerm {
 
   /// Builds the term if the term is an attribute set, otherwise type error.
-  pub fn build(&self) -> NixResult<HashMap<String, String>> {
+  pub fn build(&self) -> NixResult<Vec<NixStorePath>> {
     if let NixTerm::AttrSet(attrset) = self {
-      attrset.build()
+      attrset.realise()
     } else {
       Err(NixEvalError::TypeError { expected: "attrset".to_string(), got: self.get_typename() })
     }
@@ -553,7 +562,7 @@ impl Iterator for NixItemsIterator {
     let elem = NonNull::new(elem).expect("get_attr_byidx returned null");
     let rawvalue = RawValue {
       _state: raw._state.clone(),
-      value: elem
+      value: Rc::new(ValueWrapper(elem))
     };
     Some((name, rawvalue.to_nix(&raw._state)))
   }

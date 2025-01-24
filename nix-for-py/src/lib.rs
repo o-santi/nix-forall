@@ -2,6 +2,7 @@ mod attrset;
 mod list;
 mod function;
 mod nix_evaluator;
+mod store;
 
 use std::{collections::HashMap, sync::{Arc, Mutex}};
 use attrset::PyNixAttrSet;
@@ -82,7 +83,10 @@ impl<'gil> ToNix for PyTerm<'gil> {
 
 #[pymodule]
 mod nix_for_py {
-  use super::*;
+  use nix_for_rust::store::{NixContext, NixStore};
+use store::PyNixStore;
+
+use super::*;
   
   #[pyfunction]
   #[pyo3(signature = (store="auto", lookup_path=None, store_params=None, settings=None))]
@@ -91,7 +95,7 @@ mod nix_for_py {
     lookup_path: Option<Vec<String>>,
     store_params: Option<HashMap<String, String>>,
     settings: Option<HashMap<String, String>>
-  ) -> PyResult<PyEvalState> {
+  ) -> anyhow::Result<PyEvalState> {
     let nix_settings = NixSettings {
       settings: settings.unwrap_or_default(),
       store_params: store_params.unwrap_or_default(),
@@ -99,5 +103,12 @@ mod nix_for_py {
     };
     let eval_state = nix_settings.with_store(store)?;
     Ok(PyEvalState(Arc::new(Mutex::new(eval_state))))
+  }
+
+  #[pyfunction]
+  #[pyo3(signature = (uri, params=None))]
+  fn store_open(uri: &str, params: Option<HashMap<String, String>>) -> anyhow::Result<PyNixStore> {
+    let store = NixStore::new(NixContext::default(), uri, params.unwrap_or_default())?;
+    Ok(PyNixStore(Arc::new(Mutex::new(store))))
   }
 }

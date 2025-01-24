@@ -1,7 +1,7 @@
 use crate::error::{handle_nix_error, NixError};
 use crate::term::NixEvalError;
 use crate::utils::{callback_get_result_string, callback_get_result_string_data, read_into_hashmap};
-use crate::bindings::{c_context, c_context_create, err, err_code, store_free, store_get_version, store_is_valid_path, store_open, store_parse_path, store_path_free, store_path_name, store_realise, Store, StorePath};
+use crate::bindings::{c_context, c_context_create, err, err_code, store_copy_closure, store_free, store_get_storedir, store_get_version, store_is_valid_path, store_open, store_parse_path, store_path_free, store_path_name, store_real_path, store_realise, Store, StorePath};
 use std::collections::HashMap;
 use std::ffi::{c_void, CString};
 use std::os::raw::c_char;
@@ -52,7 +52,7 @@ pub struct NixStore {
 #[derive(Debug)]
 pub struct NixStorePath {
   pub path: PathBuf,
-  _ptr: NonNull<StorePath>
+  pub(crate) _ptr: NonNull<StorePath>
 }
 
 pub struct StoreWrapper(NonNull<Store>);
@@ -129,9 +129,42 @@ impl NixStore {
     self.ctx.check_call()?;
     Ok(is_valid)
   }
+
+  pub fn store_dir(&self) -> Result<PathBuf> {
+    let mut dir_string : Result<String> = Err(anyhow::anyhow!("Nix C API didn't return a string."));
+    unsafe {
+      store_get_storedir(self.ctx.ptr(), self.store_ptr(), Some(callback_get_result_string), callback_get_result_string_data(&mut dir_string));
+    }
+    self.ctx.check_call()?;
+    dir_string.map(PathBuf::from)
+  }
+
+  pub fn copy_closure(&self, destination: &NixStore, path: &NixStorePath) -> Result<()> {
+    unsafe {
+      store_copy_closure(self.ctx.ptr(), self.store_ptr(), destination.store_ptr(), path.as_ptr());
+    }
+    self.ctx.check_call()
+      .map_err(|e| e.into())
+  }
+
 }
 
 impl NixStorePath {
+
+  pub fn from_ptr(store: &NixStore, store_path: *mut StorePath) -> Result<Self> {
+    let ctx = NixContext::default();
+    let mut path : Result<String> = Err(anyhow::anyhow!("Nix C API didn't return a string."));
+    unsafe {
+      store_real_path(ctx.ptr(), store.store_ptr(), store_path, Some(callback_get_result_string), callback_get_result_string_data(&mut path))
+    };
+    ctx.check_call()?;
+    Ok(NixStorePath {
+      path: PathBuf::from(path?),
+      _ptr: NonNull::new(store_path)
+        .ok_or_else(|| anyhow::format_err!("store_real_path returned null"))?
+    })
+  }
+  
   fn as_ptr(&self) -> *mut StorePath {
     self._ptr.as_ptr()
   }
@@ -163,12 +196,3 @@ impl Drop for NixStorePath {
     }
   }
 }
-
-// impl Clone for NixStore {
-//   fn clone(&self) -> Self {
-//     unsafe {
-//       gc_incref(self.ctx._ctx.as_ptr(), self._store.as_ptr() as *const c_void);
-//     }
-//     NixStore { _store: self._store.clone(), ctx: self.ctx.clone() }
-//   }
-// }

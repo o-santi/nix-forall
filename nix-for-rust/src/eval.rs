@@ -1,4 +1,4 @@
-use crate::bindings::{alloc_value, expr_eval_from_string, state_create, state_free, EvalState, Value};
+use crate::bindings::{alloc_value, expr_eval_from_string, gc_decref, gc_now, state_create, state_free, value_decref, EvalState, Value};
 use crate::settings::NixSettings;
 use crate::store::{NixContext, NixStore};
 use crate::term::{NixEvalError, NixTerm, ToNix};
@@ -9,10 +9,12 @@ use anyhow::Result;
 use std::rc::Rc;
 
 #[derive(Clone)]
-pub struct RawValue {           
+pub struct RawValue {
   pub _state: NixEvalState,
-  pub value: NonNull<Value>
+  pub value: Rc<ValueWrapper>
 }
+
+pub struct ValueWrapper(pub NonNull<Value>);
 
 impl RawValue {
   pub fn empty(state: NixEvalState) -> Self {
@@ -25,8 +27,14 @@ impl RawValue {
     };
     RawValue {
       _state: state,
-      value
+      value: Rc::new(ValueWrapper(value))
     }
+  }
+}
+
+impl ValueWrapper {
+  pub fn as_ptr(&self) -> *mut Value {
+    self.0.as_ptr()
   }
 }
 
@@ -124,6 +132,16 @@ impl Drop for StateWrapper {
   fn drop(&mut self) {
     unsafe {
       state_free(self.0.as_ptr());
+    }
+  }
+}
+
+impl Drop for ValueWrapper {
+  fn drop(&mut self) {
+    let ctx = NixContext::default();
+    unsafe {
+      value_decref(ctx.ptr(), self.as_ptr());
+      ctx.check_call().unwrap();
     }
   }
 }

@@ -1,7 +1,7 @@
 use pyo3::prelude::*;
 use nix_for_rust::eval::NixEvalState;
 use std::sync::{Arc, Mutex, MutexGuard};
-use crate::nix_term_to_py;
+use crate::{nix_term_to_py, store::PyNixStore};
 
 #[derive(Clone)]
 #[pyclass]
@@ -19,6 +19,11 @@ impl PyEvalState {
 
 #[pymethods]
 impl PyEvalState {
+
+  #[getter]
+  pub fn store(&self) -> anyhow::Result<PyNixStore> {
+    Ok(PyNixStore(Arc::new(Mutex::new(self.lock().store.clone()))))
+  }
 
   #[pyo3(signature=(string, cwd=None))]
   pub fn eval_string(&mut self, py: Python<'_>, string: &str, cwd: Option<std::path::PathBuf>)  -> anyhow::Result<PyObject> {

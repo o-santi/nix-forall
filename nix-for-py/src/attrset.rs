@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard}};
+use std::{collections::HashMap, path::PathBuf, sync::{Arc, Mutex, MutexGuard}};
 
 use nix_for_rust::term::{NixAttrSet, NixItemsIterator, NixNamesIterator, Repr};
 use pyo3::{exceptions::PyAttributeError, prelude::*};
@@ -37,9 +37,12 @@ impl PyNixAttrSet {
     Ok(obj)
   }
 
-  fn build(&self) -> Result<HashMap<String, String>> {
+  fn realise(&self) -> Result<Vec<PathBuf>> {
     let attrset = self.lock();
-    let term = attrset.build()?;
+    let term = attrset.realise()?
+      .into_iter()
+      .map(|p| p.path.clone())
+      .collect();
     Ok(term)
   }
 

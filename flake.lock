@@ -252,11 +252,11 @@
     "registry-crates-io": {
       "flake": false,
       "locked": {
-        "lastModified": 1733762580,
-        "narHash": "sha256-N6jd6xSMMz3Moko0o80uVMeuPqN7pzv+wSIbO7j59mM=",
+        "lastModified": 1737733755,
+        "narHash": "sha256-g15m8IfFGWO4MoFmzAj9nFDjorTM9N1viP/83mCWNbA=",
         "owner": "rust-lang",
         "repo": "crates.io-index",
-        "rev": "fc07f939b72e22fffa79a2e1e95c0d019f9bbbd6",
+        "rev": "9dd148c9b916aa1aaf36d2b395b9428a385c0767",
         "type": "github"
       },
       "original": {

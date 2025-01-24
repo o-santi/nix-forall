@@ -103,8 +103,7 @@
       devShells.default = with pkgs; mkShell {
         LIBCLANG_PATH = "${libclang}/lib";
         buildInputs = [
-          (python3# .withPackages (p: [ p.nix-for-py ])
-          )
+          (python3.withPackages (p: [ p.nix-for-py ]))
           gdb
           pkg-config
           libclang
