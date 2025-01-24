@@ -1,5 +1,5 @@
 #![allow(non_upper_case_globals)]
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::ffi::{c_char, c_uint, CStr, CString};
 use std::ptr::NonNull;

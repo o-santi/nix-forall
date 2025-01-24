@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf, sync::{Arc, Mutex, MutexGuard}};
+use std::{path::PathBuf, sync::{Arc, Mutex, MutexGuard}};
 
 use nix_for_rust::term::{NixAttrSet, NixItemsIterator, NixNamesIterator, Repr};
 use pyo3::{exceptions::PyAttributeError, prelude::*};
