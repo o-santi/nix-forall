@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::ffi::{c_char, c_uint, CStr, CString};
 use std::ptr::NonNull;
 use std::path::PathBuf;
-use crate::bindings::{bindings_builder_free, bindings_builder_insert, get_attr_byidx, get_attr_byname, get_attr_name_byidx, get_attrs_size, get_bool, get_float, get_int, get_list_byidx, get_list_size, get_path_string, get_string, get_type, init_bool, init_float, init_int, init_null, init_path_string, init_string, list_builder_insert, make_attrs, make_bindings_builder, make_list, make_list_builder, realised_string_get_store_path, realised_string_get_store_path_count, string_realise, value_call, value_force, ValueType};
+use crate::bindings::{bindings_builder_free, bindings_builder_insert, get_attr_byidx, get_attr_byname, get_attr_name_byidx, get_attrs_size, get_bool, get_float, get_int, get_list_byidx, get_list_size, get_path_string, get_string, get_type, init_bool, init_float, init_int, init_null, init_path_string, init_string, list_builder_insert, make_attrs, make_bindings_builder, make_list, make_list_builder, realised_string_get_buffer_size, realised_string_get_buffer_start, realised_string_get_store_path, realised_string_get_store_path_count, string_realise, value_call, value_force, ValueType};
 use crate::error::NixError;
 use crate::eval::{NixEvalState, RawValue, ValueWrapper};
 use crate::store::{NixContext, NixStorePath};
@@ -46,6 +46,11 @@ pub struct NixFunction(pub(crate) RawValue);
 /// Wrapper around a pointer to nix thunk
 #[derive(Clone)]
 pub struct NixThunk(pub(crate) RawValue);
+
+pub struct NixRealisedString {
+  pub string: String,
+  pub paths: Vec<NixStorePath>
+}
 
 /// A nix term represented as a rust value.
 pub enum NixTerm {
@@ -191,7 +196,7 @@ impl NixAttrSet {
   /// Tries to build an attribute set as if it was a derivation.
   /// 
   /// Throws [`NotADerivation`][NixEvalError] if the attrset is not a derivation
-  pub fn realise(&self) -> NixResult<Vec<NixStorePath>> {
+  pub fn realise(&self) -> anyhow::Result<NixRealisedString> {
     let ctx = self.0._state.store.ctx.ptr();
     let realised_string = unsafe {
       string_realise(ctx, self.0._state.state_ptr(), self.0.value.as_ptr(), false)
@@ -200,17 +205,23 @@ impl NixAttrSet {
       realised_string_get_store_path_count(realised_string)
     };
     let store = &self.0._state.store;
-    let set: Vec<NixStorePath> = (0..path_count)
+    let paths: Vec<NixStorePath> = (0..path_count)
       .map(move |i| {
         let path = unsafe {
           realised_string_get_store_path(realised_string, i)
         };
         NixStorePath::from_ptr(store, path as *mut _)
       })
-      .collect::<anyhow::Result<_>>()
-      .map_err(|_| NixEvalError::NotADerivation)?;
-    Ok(set)
-  }    
+      .collect::<anyhow::Result<_>>()?;
+    let string = unsafe {
+      let start = realised_string_get_buffer_start(realised_string) as *const u8;
+      let size = realised_string_get_buffer_size(realised_string);
+      let slice = std::slice::from_raw_parts(start, size);
+      String::from_utf8(slice.to_vec())
+        .map_err(|e| anyhow::format_err!("Nix string is not valid UTF-8: {}", e))?
+    };
+    Ok(NixRealisedString { string, paths })
+  }
 
   /// Gets an attribute from the underlying attribute set.
   ///
@@ -352,11 +363,12 @@ impl Repr for NixList {
 impl NixTerm {
 
   /// Builds the term if the term is an attribute set, otherwise type error.
-  pub fn build(&self) -> NixResult<Vec<NixStorePath>> {
+  pub fn build(&self) -> anyhow::Result<NixRealisedString> {
     if let NixTerm::AttrSet(attrset) = self {
       attrset.realise()
     } else {
-      Err(NixEvalError::TypeError { expected: "attrset".to_string(), got: self.get_typename() })
+      let err = NixEvalError::TypeError { expected: "attrset".to_string(), got: self.get_typename() };
+      Err(err.into())
     }
   }
 

@@ -1,6 +1,6 @@
 use std::{path::PathBuf, sync::{Arc, Mutex, MutexGuard}};
 
-use nix_for_rust::term::{NixAttrSet, NixItemsIterator, NixNamesIterator, Repr};
+use nix_for_rust::term::{NixAttrSet, NixItemsIterator, NixNamesIterator, NixRealisedString, Repr};
 use pyo3::{exceptions::PyAttributeError, prelude::*};
 use anyhow::Result;
 
@@ -15,11 +15,15 @@ pub struct PyNixNamesIterator(Mutex<NixNamesIterator>);
 #[pyclass]
 pub struct PyNixItemsIterator(Mutex<NixItemsIterator>);
 
+#[pyclass]
+pub struct PyNixRealisedString(Mutex<NixRealisedString>);
+
 // Safety: we can only access the rawpointers through the Mutex,
 // which means that only one thread will have access to each at a time
 unsafe impl Send for PyNixAttrSet {}
 unsafe impl Send for PyNixNamesIterator {}
 unsafe impl Send for PyNixItemsIterator {}
+unsafe impl Send for PyNixRealisedString {}
 
 impl PyNixAttrSet {
   pub fn lock(&self) -> MutexGuard<'_, NixAttrSet> {
@@ -37,13 +41,10 @@ impl PyNixAttrSet {
     Ok(obj)
   }
 
-  fn realise(&self) -> Result<Vec<PathBuf>> {
+  fn realise(&self) -> Result<PyNixRealisedString> {
     let attrset = self.lock();
-    let term = attrset.realise()?
-      .into_iter()
-      .map(|p| p.path.clone())
-      .collect();
-    Ok(term)
+    let realised = attrset.realise()?;
+    Ok(PyNixRealisedString(Mutex::new(realised)))
   }
 
   fn __getitem__(&self, py: Python, name: &str) -> Result<PyObject> {
@@ -71,7 +72,7 @@ impl PyNixAttrSet {
     let items_iter = attrset.items()?;
     Ok(PyNixItemsIterator(Mutex::new(items_iter)))
   }
-  
+
   fn __repr__(&self) -> Result<String> {
     let attrset = self.lock();
     let repr = attrset.repr()?;
@@ -117,5 +118,29 @@ impl PyNixItemsIterator {
     } else {
       Ok(None)
     }
+  }
+}
+
+impl PyNixRealisedString {
+  pub fn lock(&self) -> MutexGuard<'_, NixRealisedString> {
+    self.0.lock().expect("Another thread panic'd while holding the lock")
+  }
+}
+
+#[pymethods]
+impl PyNixRealisedString {
+
+  #[getter]
+  fn string(&self) -> String {
+    self.lock().string.clone()
+  }
+
+  #[getter]
+  fn paths(&self) -> Vec<PathBuf> {
+    self.lock()
+      .paths
+      .iter()
+      .map(|p| p.path.clone())
+      .collect()
   }
 }
