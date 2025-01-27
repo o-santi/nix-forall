@@ -9,5 +9,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.22.4", features = [ "anyhow", "extension-module" ] }
-nix-for-rust = { path = "../nix-for-rust" }
+nix-for-rust = { path = "../nix-for-rust", features = ["eval-cache", "derivation"] }
 anyhow = "1.0.84"
