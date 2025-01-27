@@ -20,24 +20,24 @@ struct FileAttribute {
 }
 
 impl FileAttribute {
-  pub fn new<'s, I: IntoIterator<Item=&'s str>, P: AsRef<Path>>(path: P, accessor_path: I) -> Result<Self> {
+  pub fn new<S: AsRef<str>, I: IntoIterator<Item=S>, P: AsRef<Path>>(path: P, accessor_path: I) -> Result<Self> {
     Ok(FileAttribute {
       hash: blake3::hash(&std::fs::read(&path)?),
       path: std::fs::canonicalize(path)?,
-      accessor_path: accessor_path.into_iter().map(String::from).collect()
+      accessor_path: accessor_path.into_iter().map(|s| String::from(s.as_ref())).collect()
     })
   }
 }
 
 impl NixEvalState {
 
-  fn evaluate_traced<'s, I: IntoIterator<Item=&'s str>, P: AsRef<Path>>(&self, file: P, accessor_path: I, mut sender: Sender) {
+  fn evaluate_traced<'s, S: AsRef<str>, I: IntoIterator<Item=S>, P: AsRef<Path>>(&self, file: P, accessor_path: I, mut sender: Sender) {
     ptrace::traceme().unwrap();
     signal::raise(signal::Signal::SIGSTOP).unwrap();
     let path = accessor_path
       .into_iter()
       .fold(self.eval_file(file), |attr, accessor| attr.and_then(|term| term
-        .get(accessor)
+        .get(accessor.as_ref())
         .map_err(|e| anyhow::format_err!(e))))
       .and_then(|term| match term {
         NixTerm::String(p) => Ok(p),
@@ -55,7 +55,7 @@ impl NixEvalState {
     }
   }
 
-  pub fn eval_attr_from_file<'s, I: IntoIterator<Item=&'s str> + Clone, P: AsRef<Path>>(&self, file: P, accessor_path: I) -> Result<String> {
+  pub fn eval_attr_from_file<S: AsRef<str>, I: IntoIterator<Item=S> + Clone, P: AsRef<Path>>(&self, file: P, accessor_path: I) -> Result<String> {
     let file_attribute = FileAttribute::new(&file, accessor_path.clone())?;
     if let Some(p) = db::query_attr_in_cache(&file_attribute)? {
       Ok(p)
