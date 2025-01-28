@@ -1,4 +1,4 @@
-use crate::bindings::{alloc_value, expr_eval_from_string, state_create, state_free, value_decref, EvalState, Value};
+use crate::bindings::{alloc_value, expr_eval_from_string, libexpr_init, state_create, state_free, value_decref, EvalState, Value};
 use crate::settings::NixSettings;
 use crate::store::{NixContext, NixStore};
 use crate::term::{NixEvalError, NixTerm, ToNix};
@@ -65,6 +65,8 @@ impl NixEvalState {
       .chain(std::iter::once(std::ptr::null()))
       .collect();
     let state = unsafe {
+      libexpr_init(ctx.ptr());
+      ctx.check_call()?;
       state_create(ctx.ptr(), lookup_path.as_mut_ptr(), store.store_ptr())
     };
     ctx.check_call()?;
@@ -124,6 +126,10 @@ impl NixEvalState {
     };
     let contents = format!("builtins.getFlake \"{flake_path}\"");
     self.eval_string(&contents, cwd)
+  }
+
+  pub fn builtins(&self) -> Result<NixTerm> {
+    self.eval_string("builtins", std::env::current_dir()?)
   }
   
 }

@@ -49,4 +49,9 @@ impl PyEvalState {
     self.lock().eval_attr_from_file(file, accessor_path)
       .map_err(|e| e.into())
   }
+
+  pub fn builtins(&self, py:Python<'_>) -> anyhow::Result<PyObject> {
+    let term = self.lock().builtins()?;
+    nix_term_to_py(py, term)
+  }
 }
