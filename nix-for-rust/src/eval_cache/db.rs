@@ -86,7 +86,9 @@ where
         Path::new(OsStr::from_encoded_bytes_unchecked(&path)).to_path_buf()
       })
       .collect();
-    let hash = hash_files(&files)?;
+    let Ok(hash) = hash_files(&files) else {
+      continue
+    };
     if hash.to_string() == input_hash {
       return Ok(Some(output));
     }
