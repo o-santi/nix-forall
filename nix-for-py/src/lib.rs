@@ -106,7 +106,7 @@ use super::*;
   }
 
   #[pyfunction]
-  #[pyo3(signature = (uri, params=None))]
+  #[pyo3(signature = (uri, **params))]
   fn store_open(uri: &str, params: Option<HashMap<String, String>>) -> anyhow::Result<PyNixStore> {
     let store = NixStore::new(NixContext::default(), uri, params.unwrap_or_default())?;
     Ok(PyNixStore(Arc::new(Mutex::new(store))))
