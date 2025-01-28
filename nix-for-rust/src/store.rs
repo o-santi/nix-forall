@@ -1,7 +1,7 @@
 use crate::error::{handle_nix_error, NixError};
 use crate::term::NixEvalError;
 use crate::utils::{callback_get_result_string, callback_get_result_string_data, read_into_hashmap};
-use crate::bindings::{c_context, c_context_create, err, err_code, store_copy_closure, store_free, store_get_storedir, store_get_version, store_is_valid_path, store_open, store_parse_path, store_path_free, store_path_name, store_real_path, store_realise, Store, StorePath};
+use crate::bindings::{c_context, c_context_create, err, err_code, libstore_init_no_load_config, store_copy_closure, store_free, store_get_storedir, store_get_version, store_is_valid_path, store_open, store_parse_path, store_path_free, store_path_name, store_real_path, store_realise, Store, StorePath};
 use std::collections::HashMap;
 use std::ffi::{c_void, CString};
 use std::os::raw::c_char;
@@ -80,10 +80,13 @@ impl NixStore {
         .chain(std::iter::once(null_mut()))
         .collect();
       unsafe {
+        libstore_init_no_load_config(ctx.ptr());
+        ctx.check_call()?;
         store_open(ctx._ctx.as_ptr(), uri.into_raw(), params.as_mut_ptr())
       }
     };
-    let store = NonNull::new(_store).ok_or(anyhow::anyhow!("nix_store_open returned NonNull"))?;
+    ctx.check_call()?;
+    let store = NonNull::new(_store).ok_or(anyhow::anyhow!("nix_store_open returned null"))?;
     Ok(NixStore { ctx, _store: Rc::new(StoreWrapper(store)) })
   }
   
