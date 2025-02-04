@@ -3,8 +3,9 @@ CREATE TABLE IF NOT EXISTS evaluation_output (
   main_file_path BLOB NOT NULL,
   accessor_path  TEXT NOT NULL,
   output         TEXT NOT NULL,
-  main_file_hash CHAR(64) NOT NULL,       
-  input_hash     CHAR(64) NOT NULL UNIQUE
+  main_file_hash CHAR(64) NOT NULL, 
+  input_hash     CHAR(64) NOT NULL,
+  UNIQUE(input_hash, accessor_path)
 );
 
 CREATE INDEX IF NOT EXISTS idx_evaluation_output_accessor_path_file_path_file_hash ON evaluation_output(accessor_path, main_file_path, main_file_hash);
