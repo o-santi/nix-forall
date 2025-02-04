@@ -45,7 +45,7 @@ impl PyEvalState {
     self.lock().settings.get_setting(key)
   }
 
-  pub fn eval_attr_from_file(&self, file: &str, accessor_path: Vec<String>) -> anyhow::Result<String> {
+  pub fn eval_attr_from_file(&self, file: std::path::PathBuf, accessor_path: Vec<String>) -> anyhow::Result<String> {
     self.lock().eval_attr_from_file(file, accessor_path)
       .map_err(|e| e.into())
   }
