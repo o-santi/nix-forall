@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS evaluation_output (
   output         TEXT NOT NULL,
   main_file_hash CHAR(64) NOT NULL, 
   input_hash     CHAR(64) NOT NULL,
-  UNIQUE(input_hash, accessor_path)
+  -- reproducibility constraint, each of these pairs should always return the same result
+  UNIQUE(input_hash, accessor_path, main_file_path, main_file_hash) 
 );
 
 CREATE INDEX IF NOT EXISTS idx_evaluation_output_accessor_path_file_path_file_hash ON evaluation_output(accessor_path, main_file_path, main_file_hash);
