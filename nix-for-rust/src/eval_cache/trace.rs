@@ -100,7 +100,9 @@ fn pre_syscall(child: Pid) -> Option<FileAccess> {
 
 
 fn should_track_file(path: &Path) -> bool {
-  let is_immutable = path.starts_with("/nix/store/");
+  // /nix/store -> immutable, useless to track
+  // /nix/var -> ephemeral, does not change results of evaluation.
+  let is_nix = path.starts_with("/nix");
   let is_git_cache = {
     let home = home::home_dir();
     if let Some(mut h) = home {
@@ -111,7 +113,7 @@ fn should_track_file(path: &Path) -> bool {
     }
   };
   let is_in_proc = path.starts_with("/proc"); 
-  !is_immutable && !is_git_cache && !is_in_proc
+  !is_nix && !is_git_cache && !is_in_proc
 }
 
 fn read_string_from_register(pid: Pid, address: AddressType) -> String {
