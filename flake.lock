@@ -255,11 +255,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1708360007,
-        "narHash": "sha256-KZQPkC7P8zo2d8oh2HFgU29bxQjo5xSMTx1K2wcAZ2w=",
+        "lastModified": 1739196470,
+        "narHash": "sha256-9OR7BVNfO6XlhCzO6BtsbBnM5oPkMzWf4yjeJdCaXL0=",
         "owner": "deltaex",
         "repo": "nocargo",
-        "rev": "29dd16aba729d154defece153768e6b197d244b7",
+        "rev": "2a68cd604a4c885399a8a4ed461d28c2ebed07a1",
         "type": "gitlab"
       },
       "original": {
