@@ -17,7 +17,7 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nix.url = "github:nixos/nix"; # before splitting libnixflake
+    nix.url = "github:nixos/nix/2.27.0";
   };
 
   outputs = inputs @ { nixpkgs, flake-utils, nocargo, rust-overlay, ... }:
