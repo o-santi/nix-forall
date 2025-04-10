@@ -90,16 +90,19 @@ use super::*;
   
   #[pyfunction]
   #[pyo3(signature = (store="auto", lookup_path=None, store_params=None, settings=None))]
+  #[pyo3(signature = (store="auto", lookup_path=None, store_params=None, settings=None, stack_size=None))]
   fn nix_evaluator(
     store: &str,
     lookup_path: Option<Vec<String>>,
     store_params: Option<HashMap<String, String>>,
-    settings: Option<HashMap<String, String>>
+    settings: Option<HashMap<String, String>>,
+    stack_size: Option<u64>,
   ) -> anyhow::Result<PyEvalState> {
     let nix_settings = NixSettings {
       settings: settings.unwrap_or_default(),
       store_params: store_params.unwrap_or_default(),
-      lookup_path: lookup_path.unwrap_or_default()
+      lookup_path: lookup_path.unwrap_or_default(),
+      stack_size: stack_size.unwrap_or(64 * 1024 * 1024)
     };
     let eval_state = nix_settings.with_store(store)?;
     Ok(PyEvalState(Arc::new(Mutex::new(eval_state))))

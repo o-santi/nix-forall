@@ -1,17 +1,35 @@
 use std::collections::HashMap;
 use std::ffi::CString;
 use anyhow::Result;
+use nix::sys::resource::{Resource, setrlimit, getrlimit};
 
 use crate::eval::NixEvalState;
 use crate::bindings::{libexpr_init, libstore_init_no_load_config, setting_get, setting_set};
 use crate::store::{NixContext, NixStore};
 use crate::utils::{callback_get_result_string, callback_get_result_string_data};
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct NixSettings {
   pub settings: HashMap<String, String>,
   pub store_params: HashMap<String, String>,
-  pub lookup_path: Vec<String>
+  pub lookup_path: Vec<String>,
+  pub stack_size: u64
+}
+
+fn set_stack_size(new_max: u64) -> nix::Result<()> {
+  let (_soft_limit, hard_limit) = getrlimit(Resource::RLIMIT_STACK)?;
+  setrlimit(Resource::RLIMIT_STACK, std::cmp::min(new_max, hard_limit), hard_limit)
+}
+
+impl Default for NixSettings {
+  fn default() -> Self {
+    NixSettings {
+      stack_size: 64 * 1024 * 1024,  // default stack size to 64MB
+      settings: HashMap::default(),
+      store_params: HashMap::default(),
+      lookup_path: Vec::default()
+    }
+  }
 }
 
 impl NixSettings {
@@ -39,7 +57,14 @@ impl NixSettings {
     self.settings.get(key).map(String::from)
   }
 
+  pub fn with_stack_size(mut self, size: u64) -> Self {
+    self.stack_size = size;
+    self
+  }
+
   pub fn with_store(self, store_path: &str) -> Result<NixEvalState> {
+    set_stack_size(self.stack_size)?;
+    
     let ctx = NixContext::default();
     unsafe {
       libstore_init_no_load_config(ctx.ptr());
