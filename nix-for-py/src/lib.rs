@@ -84,12 +84,11 @@ impl<'gil> ToNix for PyTerm<'gil> {
 #[pymodule]
 mod nix_for_py {
   use nix_for_rust::store::{NixContext, NixStore};
-use store::PyNixStore;
+  use store::PyNixStore;
 
-use super::*;
+  use super::*;
   
   #[pyfunction]
-  #[pyo3(signature = (store="auto", lookup_path=None, store_params=None, settings=None))]
   #[pyo3(signature = (store="auto", lookup_path=None, store_params=None, settings=None, stack_size=None))]
   fn nix_evaluator(
     store: &str,
