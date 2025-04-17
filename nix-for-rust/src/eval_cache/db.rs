@@ -17,7 +17,7 @@ static TOKIO_RT: LazyLock<Runtime> = LazyLock::new(|| {
 
 static SQLITE_POOL: LazyLock<Pool<Sqlite>> = LazyLock::new(|| {
   let cache_directory = home::home_dir()
-    .unwrap_or(Path::new("/tmp").to_path_buf())
+    .unwrap_or_else(|| Path::new("/tmp").to_path_buf())
     .join(".cache")
     .join("nix-for-rust")
     .join("eval-cache");

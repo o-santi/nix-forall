@@ -5,7 +5,7 @@ use anyhow::Result;
 use interprocess::unnamed_pipe::Sender;
 use nix::sys::signal;
 use nix::unistd::{fork, ForkResult};
-use trace::trace_accessed_files;
+use trace::FileTracer;
 use std::io::{BufReader, BufRead, Write};
 use std::path::{PathBuf, Path};
 use nix::sys::ptrace;
@@ -67,14 +67,15 @@ impl NixEvalState {
           std::process::exit(0);
         }
         ForkResult::Parent { child } => {
-          let input_files = trace_accessed_files(child);
+          let tracer = FileTracer::new();
+          let input_files = tracer.watch(child)?;
           let mut output = String::new();
           BufReader::new(receiver).read_line(&mut output)?;
-          output = String::from(output.trim());
-          if output == "" {
+          let out = output.trim();
+          if out.is_empty() {
             return Err(anyhow::format_err!("Error while evaluating expression"));
           };
-          db::insert_evaluation_output(&file_attribute, input_files.into_iter().collect(), &output)?;
+          db::insert_evaluation_output(&file_attribute, input_files.into_iter().collect(), &out)?;
           Ok(output)
         }
       }

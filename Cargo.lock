@@ -936,7 +936,6 @@ dependencies = [
  "anyhow",
  "bindgen",
  "blake3",
- "byteorder",
  "futures-util",
  "home",
  "interprocess",

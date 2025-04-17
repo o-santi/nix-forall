@@ -10,7 +10,6 @@ pkg-config = "0.3.30"
 
 [dependencies]
 anyhow = "1.0.83"
-byteorder = "1.5.0"
 futures-util = "0.3.31"
 home = "0.5.9"
 thiserror = "1.0.60"

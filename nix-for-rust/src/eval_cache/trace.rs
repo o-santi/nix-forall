@@ -1,150 +1,163 @@
 use std::collections::{HashSet, HashMap};
-use std::ffi::{c_long, c_void};
+use std::ffi::{c_void, OsString};
+use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 
+use home::home_dir;
+use anyhow::{Context, Result};
 use nix::sys::signal::Signal;
 use nix::sys::wait::{wait, waitpid, WaitStatus};
 use nix::sys::ptrace::{self, AddressType, Options};
-use byteorder::{LittleEndian, WriteBytesExt};
 use nix::unistd::Pid;
 
-#[derive(Debug)]
 enum FileAccess {
-  FileOpen(PathBuf),
-  DirOpen(PathBuf),
-  ListDir(u64)
+  OpenFile { path: PathBuf, out_fd: u64 },
+  FileRead { fd : u64 },
+  ListDir { fd: u64 }
 }
 
-pub(crate) fn trace_accessed_files(child: Pid) -> HashSet<PathBuf> {
-  let mut files = HashSet::new();
-  let mut dir_fds = HashMap::new();
-  wait().expect("Parent failed while waiting for child");
-  ptrace::setoptions(child, Options::PTRACE_O_TRACESYSGOOD).unwrap();
-  ptrace::syscall(child, None).expect("Exception thrown when executing syscall");
-  loop {
-    let status = wait().unwrap();
-    match status {
-      WaitStatus::Exited(_pid, _) => {
-        break
-      },
-      WaitStatus::Stopped(pid, Signal::SIGCHLD) => {
-        ptrace::syscall(pid, Some(Signal::SIGCHLD)).unwrap();
-      }
-      WaitStatus::Stopped(pid, Signal::SIGWINCH) => {
-        ptrace::syscall(pid, Some(Signal::SIGWINCH)).unwrap();
-      }
-      WaitStatus::Signaled(_pid, _signal, _) => {
-        panic!("Evaluation process was killed.");
-      },
-      WaitStatus::PtraceSyscall(pid) => {
-        // pre-syscall execution
-        let access = pre_syscall(pid);
-        ptrace::syscall(pid, None).expect("Exception thrown when executing syscall");
-        waitpid(pid, None).expect("Error while waiting for post-syscall");
-        // post-syscall execution 
-        if let Some(access) = access {
-          match access {
-            FileAccess::FileOpen(fa) => {
-              files.insert(fa);
-            }
-            FileAccess::DirOpen(fa) => {
-              let regs = ptrace::getregs(pid).expect("should never throw error");
-              dir_fds.insert(regs.rax, fa);
-            }
-            FileAccess::ListDir(dir_fd) => {
-              if let Some(path) = dir_fds.get(&dir_fd) {
-                files.insert(path.clone());
-              }
-            }
-          }
-        }
-        // arrange for next syscall
-        if let Err(_) = ptrace::syscall(pid, None) {
-          break;
-        };
-      }
-      other => {
-        unreachable!("Wait status '{other:?}' should never happen.")
-      }
-    }
-  };
-  files
+fn wait_till_syscall_exit(pid: Pid) -> Result<()> {
+  ptrace::syscall(pid, None).context("when executing a syscall")?;
+  waitpid(pid, None).context("while waiting for syscall exit")?;
+  Ok(())
 }
 
-fn pre_syscall(child: Pid) -> Option<FileAccess> {
-  let regs = ptrace::getregs(child).expect("Call shouldn't fail");
-  let syscall = regs.orig_rax;
-  let path = match syscall {
-    2 => { // open
-      read_string_from_register(child, regs.rdi as *mut c_void)
-    },
-    78 | 217 => { // getdents, getdents64
-      return Some(FileAccess::ListDir(regs.rdi));
+impl FileAccess {
+  fn from_syscall(pid: Pid) -> Result<Option<Self>> {
+    let regs = ptrace::getregs(pid)?;
+    let syscall = regs.orig_rax;
+    match syscall {
+      0 => {
+        let regs = ptrace::getregs(pid)?;
+        Ok(Some(FileAccess::FileRead { fd: regs.rdi }))
+      }
+      2 => { // open
+        let path = read_path_from_register(pid, regs.rdi as *mut c_void);
+        wait_till_syscall_exit(pid)?;
+        let regs = ptrace::getregs(pid)?;
+        Ok(Some(FileAccess::OpenFile { path, out_fd: regs.rax }))
+      },
+      257 => { // openat
+        let path = read_path_from_register(pid, regs.rsi as *mut c_void);
+        wait_till_syscall_exit(pid)?;
+        let regs = ptrace::getregs(pid)?;
+        Ok(Some(FileAccess::OpenFile { path, out_fd: regs.rax }))
+      }
+      78 | 217 => { // getdents, getdents64
+        let regs = ptrace::getregs(pid)?;
+        wait_till_syscall_exit(pid)?;
+        Ok(Some(FileAccess::ListDir { fd: regs.rdi }))
+      }
+      _ => {
+        wait_till_syscall_exit(pid)?;
+        Ok(None)
+      }
     }
-    257 => { // openat
-      read_string_from_register(child, regs.rsi as *mut c_void)
-    }
-    _ => { return None; }
-  };
-  let path = Path::new(&path).to_path_buf();
-  if should_track_file(&path) {
-    if path.is_dir() {
-      Some(FileAccess::DirOpen(path))
-    } else {
-      Some(FileAccess::FileOpen(path))
-    }
-  } else {
-    None
   }
 }
 
-
-fn should_track_file(path: &Path) -> bool {
-  // /nix/store -> immutable, useless to track
-  // /nix/var -> ephemeral, does not change results of evaluation.
-  let is_nix = path.starts_with("/nix");
-  let is_git_cache = {
-    let home = home::home_dir();
-    if let Some(mut h) = home {
-      h.push(".cache");
-      path.starts_with(h)
-    } else {
-      true
-    }
-  };
-  let is_in_proc = path.starts_with("/proc"); 
-  !is_nix && !is_git_cache && !is_in_proc
+pub struct FileTracer {
+  read_files: HashSet<PathBuf>,
+  file_descriptors: HashMap<u64, PathBuf>,
+  home_cache_dir: Option<PathBuf>
 }
 
-fn read_string_from_register(pid: Pid, address: AddressType) -> String {
-  let mut string = String::new();
+impl FileTracer {
+  pub fn new() -> Self {
+    FileTracer {
+      read_files: HashSet::new(),
+      file_descriptors: HashMap::new(),
+      home_cache_dir: home_dir().map(|mut p| {
+        p.push(".cache");
+        p
+      })
+    }
+  }
+
+  fn should_track_file(&self, path: &Path) -> bool {
+    // /nix/store -> immutable, useless to track
+    // /nix/var -> ephemeral, does not change results of evaluation.
+    let is_nix = path.starts_with("/nix");
+    let is_git_cache = self.home_cache_dir.as_ref().map(|h| path.starts_with(h)).unwrap_or(true);
+    let is_in_proc = path.starts_with("/proc"); 
+    !is_nix && !is_in_proc && !is_git_cache
+  }
+
+  fn handle_access(&mut self, access: FileAccess) {
+    match access {
+      FileAccess::OpenFile { path, out_fd: fd } => {
+        self.file_descriptors.insert(fd, path);
+      }
+      FileAccess::ListDir { fd } | FileAccess::FileRead { fd } => {
+        let path = self.file_descriptors.get(&fd).expect(&format!("unknown file descriptor '{fd}'"));
+        if self.should_track_file(path) {
+          self.read_files.insert(path.clone());
+        }
+      }
+    }
+  }
+
+  pub(crate) fn watch(mut self, child: Pid) -> Result<HashSet<PathBuf>> {
+    wait().context("while attaching to child")?;
+    ptrace::setoptions(child, Options::PTRACE_O_TRACESYSGOOD).context("setting ptrace options")?;
+    ptrace::syscall(child, None).context("Exception thrown when executing syscall")?;
+    loop {
+      let status = wait().context("while waiting for syscall entry")?;
+      match status {
+        WaitStatus::Exited(_pid, _) => {
+          break
+        },
+        WaitStatus::Stopped(pid, sig @ (Signal::SIGCHLD | Signal::SIGWINCH)) => {
+          ptrace::syscall(pid, Some(sig)).context("while resuming from a signal")?;
+        }
+        WaitStatus::Signaled(_pid, _signal, _) => {
+          anyhow::bail!("Evaluation process was killed.");
+        },
+        WaitStatus::PtraceSyscall(pid) => {
+          // pre-syscall execution
+          let access = FileAccess::from_syscall(pid)
+            .context("while parsing syscall entry")?;
+          // post-syscall execution 
+          if let Some(access) = access {
+            self.handle_access(access);
+          }
+          // arrange for next syscall
+          if let Err(_) = ptrace::syscall(pid, None) {
+            break;
+          };
+        }
+        other => {
+          unreachable!("Wait status '{other:?}' should never happen.")
+        }
+      }
+    };
+    Ok(self.read_files)
+  }
+
+}
+
+fn read_path_from_register(pid: Pid, address: AddressType) -> PathBuf {
+  let mut bytes = Vec::new();
   // Move 8 bytes up each time for next read.
   let mut count = 0;
-  let word_size = 8;
-
   'done: loop {
-    let mut bytes: Vec<u8> = vec![];
-    let address = unsafe { address.offset(count) };
+    let address = address.wrapping_add(count);
 
-    let res: c_long;
-
-    match ptrace::read(pid, address) {
-      Ok(c_long) => res = c_long,
+    let res: i64 = match ptrace::read(pid, address) {
+      Ok(c_long) => c_long,
       Err(_) => break 'done,
-    }
+    };
 
-    bytes.write_i64::<LittleEndian>(res).unwrap_or_else(|err| {
-      panic!("Failed to write {} as i64 LittleEndian: {}", res, err);
-    });
+    let bits = res.to_le_bytes();
 
-    for b in bytes {
-      if b != 0 {
-        string.push(b as char);
-      } else {
-        break 'done;
-      }
+    if let Some(null_pos) = bits.iter().position(|&c| c == b'\0') {
+      bytes.extend_from_slice(&bits[..null_pos]);
+      break 'done
+    } else {
+      bytes.extend_from_slice(&bits);
     }
-    count += word_size;
+    
+    count += size_of::<i64>();
   }
-  string
+  PathBuf::from(OsString::from_vec(bytes))
 }
