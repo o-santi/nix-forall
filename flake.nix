@@ -61,7 +61,7 @@
           "nix-for-rust" = old: {
             preBuild = bindgen_args;
             LIBCLANG_PATH = "${libclang}/lib";
-            buildInputs = [ libclang ] ++ nix-deps;
+            buildInputs = [ libclang libseccomp ] ++ nix-deps;
             nativeBuildInputs = [ pkg-config ] ++ nix-deps;
           };
           "nix-for-py" = old: {
@@ -103,7 +103,8 @@
       devShells.default = with pkgs; mkShell {
         LIBCLANG_PATH = "${libclang}/lib";
         buildInputs = [
-          (python3.withPackages (p: [ p.nix-for-py ]))
+          # (python3.withPackages (p: [ p.nix-for-py ]))
+          libseccomp
           gdb
           pkg-config
           libclang
