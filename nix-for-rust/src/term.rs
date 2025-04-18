@@ -242,6 +242,7 @@ impl NixAttrSet {
     rawvalue.to_nix(&self.0._state)
   }
 
+ 
   /// How many elements there are in the attribute set.
   pub fn len(&self) -> NixResult<u32> {
     let len = unsafe { get_attrs_size(self.0._state.store.ctx.ptr(), self.0.value.as_ptr()) };
@@ -473,6 +474,14 @@ impl NixTerm {
     }
   }
 
+  pub fn get_path<S: AsRef<str>, P: IntoIterator<Item=S>>(self, path: P) -> NixResult<NixTerm> {
+    let mut attrset = self;
+    for attr in path {
+      attrset = attrset.get(attr.as_ref())?;
+    }
+    Ok(attrset)
+  }
+  
   pub fn as_bool(&self) -> NixResult<bool> {
     let NixTerm::Bool(b) = self else {
       return Err(NixEvalError::TypeError { expected: "bool".into(), got: self.get_typename() });
@@ -494,11 +503,11 @@ impl NixTerm {
     Ok(*f)
   }
 
-  pub fn as_string(&self) -> NixResult<String> {
+  pub fn as_string(&self) -> NixResult<&str> {
     let NixTerm::String(s) = self else {
       return Err(NixEvalError::TypeError { expected: "string".into(), got: self.get_typename() });
     };
-    Ok(s.to_string())
+    Ok(s)
   }
 
   pub fn as_list(&self) -> NixResult<Vec<NixTerm>> {

@@ -28,6 +28,7 @@ impl FileAttribute {
       accessor_path: accessor_path.into_iter().map(|s| String::from(s.as_ref())).collect()
     })
   }
+
 }
 
 fn set_seccomp() -> Result<()> {
@@ -48,14 +49,11 @@ impl NixEvalState {
     set_seccomp().unwrap();
     ptrace::traceme().unwrap();
     signal::raise(signal::Signal::SIGSTOP).unwrap();
-    let path = accessor_path
-      .into_iter()
-      .fold(self.eval_file(file), |attr, accessor| attr.and_then(|term| term
-        .get(accessor.as_ref())
-        .map_err(|e| anyhow::format_err!(e))))
-      .and_then(|term| match term {
-        NixTerm::String(p) => Ok(p),
-        other => Err(anyhow::format_err!("Attribute did not evaluate to string: '{}'", other.repr().unwrap()))
+    let path = self.eval_file(file)
+      .and_then(|attr| attr.get_path(accessor_path).map_err(|e| e.into()))
+      .and_then(|string| match string {
+        NixTerm::String(s) => Ok(s),
+        _ => Err(anyhow::format_err!("term did not evaluate to string"))
       });
     match path {
       Ok(p) => {
@@ -71,9 +69,9 @@ impl NixEvalState {
 
   pub fn eval_attr_from_file<S: AsRef<str>, I: IntoIterator<Item=S> + Clone, P: AsRef<Path>>(&self, file: P, accessor_path: I) -> Result<String> {
     let file_attribute = FileAttribute::new(&file, accessor_path.clone())?;
-    // if let Some(p) = db::query_attr_in_cache(&file_attribute)? {
-    //   Ok(p)
-    // } else {
+    if let Some(p) = db::query_attr_in_cache(&file_attribute)? {
+      Ok(p)
+    } else {
       let (sender, receiver) = interprocess::unnamed_pipe::pipe()?;
       match unsafe { fork()? } {
         ForkResult::Child => {
@@ -89,11 +87,10 @@ impl NixEvalState {
           if out.is_empty() {
             return Err(anyhow::format_err!("Error while evaluating expression"));
           };
-          println!("{out}");
-          // db::insert_evaluation_output(&file_attribute, input_files.into_iter().collect(), &out)?;
+          db::insert_evaluation_output(&file_attribute, input_files.into_iter().collect(), &out)?;
           Ok(output)
         }
       }
-    // }
+    }
   }
 }

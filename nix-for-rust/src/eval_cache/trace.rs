@@ -25,27 +25,27 @@ fn wait_till_syscall_exit(pid: Pid) -> Result<()> {
 
 impl FileAccess {
   fn from_syscall(pid: Pid) -> Result<Option<Self>> {
-    let regs = ptrace::sysgetregs(pid)?;
+    let regs = ptrace::getregs(pid)?;
     let syscall = regs.orig_rax;
     match syscall {
       0 => {
-        let regs = ptrace::sysgetregs(pid)?;
+        let regs = ptrace::getregs(pid)?;
         Ok(Some(FileAccess::FileRead { fd: regs.rdi }))
       }
       2 => { // open
         let path = read_path_from_register(pid, regs.rdi as *mut c_void);
         wait_till_syscall_exit(pid)?;
-        let regs = ptrace::sysgetregs(pid)?;
+        let regs = ptrace::getregs(pid)?;
         Ok(Some(FileAccess::OpenFile { path, out_fd: regs.rax }))
       },
       257 => { // openat
         let path = read_path_from_register(pid, regs.rsi as *mut c_void);
         wait_till_syscall_exit(pid)?;
-        let regs = ptrace::sysgetregs(pid)?;
+        let regs = ptrace::getregs(pid)?;
         Ok(Some(FileAccess::OpenFile { path, out_fd: regs.rax }))
       }
       78 | 217 => { // getdents, getdents64
-        let regs = ptrace::sysgetregs(pid)?;
+        let regs = ptrace::getregs(pid)?;
         wait_till_syscall_exit(pid)?;
         Ok(Some(FileAccess::ListDir { fd: regs.rdi }))
       }
@@ -83,26 +83,26 @@ impl FileTracer {
     !is_nix && !is_in_proc && !is_git_cache
   }
 
-  fn handle_access(&mut self, access: FileAccess) {
+  fn handle_access(&mut self, access: FileAccess) -> Result<()> {
     match access {
       FileAccess::OpenFile { path, out_fd: fd } => {
         self.file_descriptors.insert(fd, path);
       }
       FileAccess::ListDir { fd } | FileAccess::FileRead { fd } => {
         let path = self.file_descriptors.get(&fd)
-          .expect(&format!("unknown file descriptor '{fd}'"));
+          .ok_or_else(|| anyhow::format_err!("unknown file descriptor '{fd}'"))?;
         if self.should_track_file(path) {
           self.read_files.insert(path.clone());
         }
       }
-    }
+    };
+    Ok(())
   }
 
   pub(crate) fn watch(mut self, child: Pid) -> Result<FxHashSet<PathBuf>> {
     wait().context("while attaching to child")?;
     ptrace::setoptions(child, Options::PTRACE_O_TRACESECCOMP | Options::PTRACE_O_TRACESYSGOOD).context("setting ptrace options")?;
-    ptrace::cont(child, None).context("Exception thrown when executing syscall")?;
-    loop {
+    while let Ok(_) = ptrace::cont(child, None) {
       let status = wait().context("while waiting for syscall entry")?;
       match status {
         WaitStatus::Exited(_pid, _) => {
@@ -121,12 +121,8 @@ impl FileTracer {
             .context("while parsing syscall entry")?;
           // post-syscall execution 
           if let Some(access) = access {
-            self.handle_access(access);
+            self.handle_access(access)?;
           }
-          // // arrange for next syscall
-          if let Err(_) = ptrace::cont(pid, None) {
-            break;
-          };
         }
         other => {
           unreachable!("Wait status '{other:?}' should never happen.")
