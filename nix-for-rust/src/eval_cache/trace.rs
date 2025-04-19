@@ -1,13 +1,15 @@
 use std::ffi::{c_void, OsString};
+use std::io::{BufRead, BufReader, Write};
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 
 use home::home_dir;
 use anyhow::{Context, Result};
-use nix::sys::signal::Signal;
+use libseccomp::{ScmpAction, ScmpArch, ScmpFilterContext, ScmpSyscall};
+use nix::sys::signal::{self, Signal};
 use nix::sys::wait::{wait, waitpid, WaitStatus};
 use nix::sys::ptrace::{self, AddressType, Options};
-use nix::unistd::Pid;
+use nix::unistd::{fork, ForkResult, Pid};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 #[derive(Debug)]
@@ -71,6 +73,39 @@ impl FileTracer {
         p.push(".cache");
         p
       })
+    }
+  }
+
+  pub fn watch_call<F: FnOnce() -> Result<String>>(self, f: F) -> Result<(String, FxHashSet<PathBuf>)> {
+    let (mut sender, receiver) = interprocess::unnamed_pipe::pipe()?;
+    match unsafe { fork()? } {
+      ForkResult::Child => {
+        setup_seccomp().unwrap();
+        ptrace::traceme().unwrap();
+        signal::raise(signal::Signal::SIGSTOP).unwrap();
+
+        let string = f();
+        match string {
+          Ok(p) => {
+            sender.write_all(p.as_bytes()).unwrap();
+          },
+          Err(e) => {
+            eprintln!("{e}");
+          },
+        }
+        sender.write(b"\n").unwrap();
+        std::process::exit(0);
+      }
+      ForkResult::Parent { child } => {
+        let input_files = self.watch(child)?;
+        let mut output = String::new();
+        BufReader::new(receiver).read_line(&mut output)?;
+        let out = output.trim();
+        if out.is_empty() {
+          return Err(anyhow::format_err!("Error while evaluating expression"));
+        };
+        Ok((out.to_string(), input_files))
+      }
     }
   }
 
@@ -158,4 +193,18 @@ fn read_path_from_register(pid: Pid, address: AddressType) -> PathBuf {
     count += size_of::<i64>();
   }
   PathBuf::from(OsString::from_vec(bytes))
+}
+
+
+
+fn setup_seccomp() -> Result<()> {
+  ScmpFilterContext::new(ScmpAction::Allow)?
+    .add_arch(ScmpArch::native())?
+    .add_rule(ScmpAction::Trace(0), ScmpSyscall::from_name("open")?)?
+    .add_rule(ScmpAction::Trace(0), ScmpSyscall::from_name("openat")?)?
+    .add_rule(ScmpAction::Trace(0), ScmpSyscall::from_name("read")?)?
+    .add_rule(ScmpAction::Trace(0), ScmpSyscall::from_name("getdents")?)?
+    .add_rule(ScmpAction::Trace(0), ScmpSyscall::from_name("getdents64")?)?
+    .load()?;
+  Ok(())
 }

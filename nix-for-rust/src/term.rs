@@ -503,7 +503,7 @@ impl NixTerm {
     Ok(*f)
   }
 
-  pub fn as_string(&self) -> NixResult<&str> {
+  pub fn as_str(&self) -> NixResult<&str> {
     let NixTerm::String(s) = self else {
       return Err(NixEvalError::TypeError { expected: "string".into(), got: self.get_typename() });
     };
