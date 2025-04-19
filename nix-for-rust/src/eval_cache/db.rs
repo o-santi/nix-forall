@@ -1,7 +1,6 @@
 use std::ffi::OsStr;
 use std::str::FromStr;
 use std::path::{PathBuf, Path};
-use futures_util::future::try_join_all;
 use sqlx::{Pool, Sqlite};
 use sqlx::{sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous}, SqlitePool};
 use anyhow::{Context, Result};
