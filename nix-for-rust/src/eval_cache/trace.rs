@@ -26,30 +26,30 @@ fn wait_till_syscall_exit(pid: Pid) -> Result<()> {
 }
 
 impl FileAccess {
-  fn from_syscall(pid: Pid) -> Result<Option<Self>> {
+  fn from_syscall(pid: Pid) -> Result<Self> {
     let regs = ptrace::getregs(pid)?;
     let syscall = regs.orig_rax;
     match syscall {
       0 => {
         let regs = ptrace::getregs(pid)?;
-        Ok(Some(FileAccess::FileRead { fd: regs.rdi }))
+        Ok(FileAccess::FileRead { fd: regs.rdi })
       }
       2 => { // open
         let path = read_path_from_register(pid, regs.rdi as *mut c_void);
         wait_till_syscall_exit(pid)?;
         let regs = ptrace::getregs(pid)?;
-        Ok(Some(FileAccess::OpenFile { path, out_fd: regs.rax }))
+        Ok(FileAccess::OpenFile { path, out_fd: regs.rax })
       },
       257 => { // openat
         let path = read_path_from_register(pid, regs.rsi as *mut c_void);
         wait_till_syscall_exit(pid)?;
         let regs = ptrace::getregs(pid)?;
-        Ok(Some(FileAccess::OpenFile { path, out_fd: regs.rax }))
+        Ok(FileAccess::OpenFile { path, out_fd: regs.rax })
       }
       78 | 217 => { // getdents, getdents64
         let regs = ptrace::getregs(pid)?;
         wait_till_syscall_exit(pid)?;
-        Ok(Some(FileAccess::ListDir { fd: regs.rdi }))
+        Ok(FileAccess::ListDir { fd: regs.rdi })
       }
       _ => {
         unreachable!("unknown syscall {syscall}")
@@ -137,7 +137,7 @@ impl FileTracer {
   pub(crate) fn watch(mut self, child: Pid) -> Result<FxHashSet<PathBuf>> {
     wait().context("while attaching to child")?;
     ptrace::setoptions(child, Options::PTRACE_O_TRACESECCOMP | Options::PTRACE_O_TRACESYSGOOD).context("setting ptrace options")?;
-    while let Ok(_) = ptrace::cont(child, None) {
+    loop {
       let status = wait().context("while waiting for syscall entry")?;
       match status {
         WaitStatus::Exited(_pid, _) => {
@@ -155,9 +155,8 @@ impl FileTracer {
           let access = FileAccess::from_syscall(pid)
             .context("while parsing syscall entry")?;
           // post-syscall execution 
-          if let Some(access) = access {
-            self.handle_access(access)?;
-          }
+          self.handle_access(access)?;
+          ptrace::cont(pid, None).context("while restarting from a syscall stop;")?;
         }
         other => {
           unreachable!("Wait status '{other:?}' should never happen.")
