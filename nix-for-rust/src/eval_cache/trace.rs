@@ -137,6 +137,7 @@ impl FileTracer {
   pub(crate) fn watch(mut self, child: Pid) -> Result<FxHashSet<PathBuf>> {
     wait().context("while attaching to child")?;
     ptrace::setoptions(child, Options::PTRACE_O_TRACESECCOMP | Options::PTRACE_O_TRACESYSGOOD).context("setting ptrace options")?;
+    ptrace::cont(child, None).context("while resuming from a signal")?;
     loop {
       let status = wait().context("while waiting for syscall entry")?;
       match status {
