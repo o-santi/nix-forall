@@ -82,6 +82,7 @@ impl FileAttribute {
         .bind(input_hash.to_string())
         .fetch_one(&mut *conn)
         .await?;
+      // TODO: parallelize this using rt.spawn
       for file in input_files {
         sqlx::query("INSERT INTO evaluation_input (evaluation_id, file_path) VALUES (?, ?)")
           .bind(evaluation_id)
@@ -121,6 +122,7 @@ pub async fn setup_db_connection<P: AsRef<str>>(database_url: P) -> Result<Sqlit
   Ok(pool)
 }
 
+// TODO: parallelize file reads?
 pub fn hash_files(mut files: Vec<PathBuf>) -> Result<blake3::Hash> {
   let mut hasher = blake3::Hasher::new();
   files.sort();

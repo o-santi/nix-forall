@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use home::home_dir;
 use anyhow::{Context, Result};
 use libseccomp::{ScmpAction, ScmpArch, ScmpFilterContext, ScmpSyscall};
+use nix::libc::{PTRACE_EVENT_CLONE, PTRACE_EVENT_VFORK, PTRACE_EVENT_SECCOMP};
 use nix::sys::signal::{self, Signal};
 use nix::sys::wait::{wait, waitpid, WaitStatus};
 use nix::sys::ptrace::{self, AddressType, Options};
@@ -136,26 +137,26 @@ impl FileTracer {
 
   pub(crate) fn watch(mut self, child: Pid) -> Result<FxHashSet<PathBuf>> {
     wait().context("while attaching to child")?;
-    ptrace::setoptions(child, Options::PTRACE_O_TRACESECCOMP | Options::PTRACE_O_TRACESYSGOOD).context("setting ptrace options")?;
+    ptrace::setoptions(child, Options::PTRACE_O_TRACESECCOMP
+      | Options::PTRACE_O_TRACESYSGOOD
+      | Options::PTRACE_O_EXITKILL)
+      .context("setting ptrace options")?;
     ptrace::cont(child, None).context("while resuming from a signal")?;
     loop {
-      let status = wait().context("while waiting for syscall entry")?;
+      let status = wait().context("while waiting for seccomp trace entry")?;
       match status {
         WaitStatus::Exited(_pid, _) => {
           break
         },
-        WaitStatus::Stopped(pid, sig @ (Signal::SIGCHLD | Signal::SIGWINCH)) => {
+        WaitStatus::Stopped(pid, sig @ Signal::SIGWINCH) => {
           ptrace::cont(pid, Some(sig)).context("while resuming from a signal")?;
         }
         WaitStatus::Signaled(_pid, _signal, _) => {
           anyhow::bail!("Evaluation process was killed.");
         },
-        WaitStatus::Stopped(pid, Signal::SIGTRAP) |
-        WaitStatus::PtraceEvent(pid, Signal::SIGTRAP, _)=> {
-          // pre-syscall execution
+        WaitStatus::PtraceEvent(pid, Signal::SIGTRAP, PTRACE_EVENT_SECCOMP)=> {
           let access = FileAccess::from_syscall(pid)
             .context("while parsing syscall entry")?;
-          // post-syscall execution 
           self.handle_access(access)?;
           ptrace::cont(pid, None).context("while restarting from a syscall stop;")?;
         }

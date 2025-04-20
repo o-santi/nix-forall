@@ -3,5 +3,7 @@ members = ["nix-for-rust", "nix-for-py"]
 resolver = "2"
 
 [profile.release]
+strip = false
+debug = true
 lto = "fat"
 codegen-units = 1
