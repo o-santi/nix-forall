@@ -76,10 +76,8 @@ impl NixEvalState {
 
   pub fn eval_string(&self, expr: &str, cwd: PathBuf) -> Result<NixTerm> {
     let cstr = CString::new(expr)?;
-    let current_dir = cwd.as_path()
-      .to_str()
-      .ok_or_else(|| anyhow::format_err!("Cannot get current directory"))?
-      .to_owned();
+    let current_dir = cwd.into_os_string().into_string()
+      .map_err(|e| anyhow::format_err!("cannot convert cwd '{e:?}' to string"))?;
     let current_dir = CString::new(current_dir)?;
     let val = RawValue::empty(self.clone());
     unsafe {
