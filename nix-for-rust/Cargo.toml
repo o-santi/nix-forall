@@ -13,7 +13,7 @@ anyhow = "1.0.83"
 futures-util = "0.3.31"
 home = "0.5.9"
 thiserror = "1.0.60"
-nix = { version = "0.29.0", features = ["process", "ptrace", "fs", "signal", "resource"], optional = true }
+nix = { version = "0.29.0", features = [ "resource"] }
 blake3 = { version = "1.5.5", features = ["mmap"], optional = true }
 interprocess = { version = "2.2.2", optional = true }
 sqlx = { version = "0.8.2", features = [ "runtime-tokio", "sqlite", "migrate" ], optional = true}
@@ -22,5 +22,5 @@ nom = { version = "7.1.3", features = ["alloc"], optional = true }
 
 [features]
 default = []
-eval-cache = ["dep:sqlx", "dep:nix", "dep:blake3", "dep:tokio", "dep:interprocess"]
+eval-cache = ["dep:sqlx", "dep:blake3", "dep:tokio", "dep:interprocess", "nix/ptrace", "nix/fs", "nix/signal", "nix/process"]
 derivation = ["dep:nom"]
