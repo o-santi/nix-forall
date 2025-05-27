@@ -28,19 +28,14 @@
       };
       nix = inputs.nix.packages.${system};
       nix-deps = with nix; [ nix-store-c nix-expr-c nix-util-c ];
-      bindgen_args = with pkgs; ''
-          export BINDGEN_EXTRA_CLANG_ARGS="$(< ${stdenv.cc}/nix-support/libc-crt1-cflags) \
-            $(< ${stdenv.cc}/nix-support/libc-cflags) \
-            $(< ${stdenv.cc}/nix-support/cc-cflags) \
-            $(< ${stdenv.cc}/nix-support/libcxx-cxxflags) \
-            ${lib.optionalString stdenv.cc.isClang "-idirafter ${stdenv.cc.cc}/lib/clang/${lib.getVersion stdenv.cc.cc}/include"} \
-            ${lib.optionalString stdenv.cc.isGNU "-isystem ${stdenv.cc.cc}/include/c++/${lib.getVersion stdenv.cc.cc} -isystem ${stdenv.cc.cc}/include/c++/${lib.getVersion stdenv.cc.cc}/${stdenv.hostPlatform.config} -idirafter ${stdenv.cc.cc}/lib/gcc/${stdenv.hostPlatform.config}/${lib.getVersion stdenv.cc.cc}/include"} \
-          "
-          '';
-      libclang = pkgs.llvmPackages_18.libclang.lib;
+      rust-tools = pkgs.rust-bin.stable.latest;
+      rustPlatform = pkgs.makeRustPlatform {
+        cargo = rust-tools.minimal;
+        rustc = rust-tools.minimal;
+      };
       make-workspace-for-python = python: nocargo.lib.${system}.mkRustPackageOrWorkspace {
         src = ./.;
-        rustc = pkgs.rust-bin.stable.latest.minimal;
+        rustc = rust-tools.minimal;
         buildCrateOverrides = with pkgs; {
           "pyo3-build-config 0.22.4 (registry+https://github.com/rust-lang/crates.io-index)" = old: {
             nativeBuildInputs = [ python ];
@@ -59,9 +54,7 @@
             procMacro = true;
           };
           "nix-for-rust" = old: {
-            preBuild = bindgen_args;
-            LIBCLANG_PATH = "${libclang}/lib";
-            buildInputs = [ libclang ] ++ nix-deps;
+            buildInputs = [ rustPlatform.bindgenHook ] ++ nix-deps;
             nativeBuildInputs = [ pkg-config ] ++ nix-deps;
           };
           "nix-for-py" = old: {
@@ -101,17 +94,16 @@
         inherit nix-for-py-overlay;
       };
       devShells.default = with pkgs; mkShell {
-        LIBCLANG_PATH = "${libclang}/lib";
         buildInputs = [
           (python3.withPackages (p: [ p.nix-for-py ]))
           gdb
           pkg-config
           libclang
-          (rust-bin.stable.latest.default.override {
+          (rust-tools.default.override {
             extensions = ["rust-src" "rust-analyzer"];
           })
         ] ++ nix-deps;
-        shellHook=bindgen_args;
+        shellHook=rustPlatform.bindgenHook;
       };
     });
 }
