@@ -5,7 +5,7 @@
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-24.11";
     flake-utils.url = "github:numtide/flake-utils";
     nocargo = {
-      url = "gitlab:deltaex/nocargo";
+      url = "github:o-santi/nocargo";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.registry-crates-io.follows = "registry-crates-io";
     };
