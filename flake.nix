@@ -2,7 +2,7 @@
   description = "A very basic flake";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-24.11";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     nocargo = {
       url = "github:o-santi/nocargo";
@@ -17,7 +17,7 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nix.url = "github:nixos/nix/2.27.0";
+    nix.url = "github:nixos/nix";
   };
 
   outputs = inputs @ { nixpkgs, flake-utils, nocargo, rust-overlay, ... }:
@@ -26,13 +26,23 @@
         overlays = [ (import rust-overlay) nix-for-py-overlay ];
         inherit system;
       };
-      nix = inputs.nix.packages.${system};
+      nix = inputs.nix.packages.${system}.nix.libs;
       nix-deps = with nix; [ nix-store-c nix-expr-c nix-util-c ];
       rust-tools = pkgs.rust-bin.stable.latest;
-      rustPlatform = pkgs.makeRustPlatform {
-        cargo = rust-tools.minimal;
-        rustc = rust-tools.minimal;
-      };
+      bindgen_gcc_args = ''
+        echo "Extending BINDGEN_EXTRA_CLANG_ARGS with system include paths..." 2>&1
+        BINDGEN_EXTRA_CLANG_ARGS="$${BINDGEN_EXTRA_CLANG_ARGS:-}"
+        include_paths=$(
+          echo | $NIX_CC_UNWRAPPED -v -E -x c - 2>&1 \
+          | awk '/#include <...> search starts here:/{flag=1;next} \
+                /End of search list./{flag=0} \
+                flag==1 {print $1}'
+        )
+        for path in $include_paths; do
+          echo " - $path" 2>&1
+          BINDGEN_EXTRA_CLANG_ARGS="$BINDGEN_EXTRA_CLANG_ARGS -I$path"
+        done
+      '';
       make-workspace-for-python = python: nocargo.lib.${system}.mkRustPackageOrWorkspace {
         src = ./.;
         rustc = rust-tools.minimal;
@@ -54,8 +64,14 @@
             procMacro = true;
           };
           "nix-for-rust" = old: {
-            buildInputs = [ rustPlatform.bindgenHook ] ++ nix-deps;
-            nativeBuildInputs = [ pkg-config ] ++ nix-deps;
+            LIBCLANG_PATH = lib.makeLibraryPath [ libclang ];
+            buildInputs = [ ] ++ nix-deps;
+            nativeBuildInputs = [ pkg-config pkgs.stdenv.cc ] ++ nix-deps;
+          } // lib.optionalAttrs pkgs.stdenv.cc.isGNU {
+            postConfigure = bindgen_gcc_args;
+            BINDGEN_EXTRA_CLANG_ARGS="-x c++ -std=c++2a";
+            # Avoid cc wrapper, because we only need to add the compiler/"system" dirs
+            NIX_CC_UNWRAPPED = "${pkgs.stdenv.cc.cc}/bin/gcc";
           };
           "nix-for-py" = old: {
             nativeBuildInputs = [ pkg-config ] ++ nix-deps;
@@ -102,8 +118,8 @@
           (rust-tools.default.override {
             extensions = ["rust-src" "rust-analyzer"];
           })
-        ] ++ nix-deps;
-        shellHook=rustPlatform.bindgenHook;
+        ];
+        nativeBuildInputs = [ packages.nix-for-rust ];
       };
     });
 }
