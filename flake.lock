@@ -219,17 +219,17 @@
         ]
       },
       "locked": {
-        "lastModified": 1739196470,
-        "narHash": "sha256-9OR7BVNfO6XlhCzO6BtsbBnM5oPkMzWf4yjeJdCaXL0=",
-        "owner": "deltaex",
+        "lastModified": 1748486175,
+        "narHash": "sha256-P86B46vyp11GDcm74heD4yc/U5CWdZHQsdNSf9NS6nQ=",
+        "owner": "o-santi",
         "repo": "nocargo",
-        "rev": "2a68cd604a4c885399a8a4ed461d28c2ebed07a1",
-        "type": "gitlab"
+        "rev": "9a12309550e40affcc2f170e09c08ece63d54a90",
+        "type": "github"
       },
       "original": {
-        "owner": "deltaex",
+        "owner": "o-santi",
         "repo": "nocargo",
-        "type": "gitlab"
+        "type": "github"
       }
     },
     "registry-crates-io": {
