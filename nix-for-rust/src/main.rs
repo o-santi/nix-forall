@@ -1,16 +1,22 @@
 use nix_for_rust::settings::NixSettings;
+use nix_for_rust::flakes::{FetchersSettings, FlakeLockFlags, FlakeRefBuilder, FlakeSettings};
+use nix_for_rust::term::Repr;
 
 pub fn main() -> anyhow::Result<()> {
-  let state = NixSettings::default()
-    .with_setting("extra-experimental-features", "flakes")
+  let mut settings = FlakeSettings::new(FetchersSettings::new()?)?;
+
+  let mut flags = FlakeRefBuilder::new(settings)?;
+  flags.set_basedir(&std::env::current_dir()?)?;
+  let flake_ref = flags.parse("..#hello.nixosConfigurations")?;
+
+  let mut nix = NixSettings::default()
+    // .with_flakes(settings)
     .with_default_store()?;
-  let valid_pkgs = state.eval_flake("github:NixOS/nixpkgs")?
-    .get("legacyPackages")?
-    .get("x86_64-linux")?
-    .items()?
-    .filter_map(|(_name, term)| term.ok())
-    .count();
-  println!("Rejoice! You can build {valid_pkgs} packages from nixpkgs.");
+
+  let mut settings = FlakeSettings::new(FetchersSettings::new()?)?;
+  
+  let locked = nix.lock_flake(flake_ref, FlakeLockFlags::new(&settings)?)?;
+  
+  println!("{}", locked.outputs()?.repr()?);
   Ok(())
 }
-

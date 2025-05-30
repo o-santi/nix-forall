@@ -24,7 +24,6 @@ impl Default for NixContext {
     };
     NixContext { _ctx  }
   }
-
 }
 
 impl NixContext {
@@ -40,6 +39,22 @@ impl NixContext {
     } else {
       Ok(())
     }
+  }
+
+  pub fn checking<T, F: FnMut(&Self) -> T>(mut closure: F) -> Result<T> {
+    let ctx = Self::default();
+    let res = closure(&ctx);
+    ctx.check_call()?;
+    Ok(res)
+  }
+
+  pub fn non_null<T, F: FnMut(&Self) -> *mut T>(mut closure: F) -> Result<NonNull<T>> {
+    let ctx = Self::default();
+    let res = closure(&ctx);
+    ctx.check_call()?;
+    
+    NonNull::new(res)
+      .ok_or(anyhow::format_err!("Nix C API returned a null pointer"))
   }
 }
 

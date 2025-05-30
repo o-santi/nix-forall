@@ -20,6 +20,7 @@ pub mod store;
 pub mod term;
 pub mod error;
 pub mod settings;
+pub mod flakes;
 mod bindings;
 mod utils;
 #[cfg(feature="eval-cache")]

@@ -27,8 +27,12 @@
         inherit system;
       };
       nix = inputs.nix.packages.${system}.nix.libs;
-      nix-deps = with nix; [ nix-store-c nix-expr-c nix-util-c ];
+      nix-deps = with nix; [ nix-store-c nix-expr-c nix-util-c nix-flake-c ];
       rust-tools = pkgs.rust-bin.stable.latest;
+      rustPlatform = pkgs.makeRustPlatform {
+        cargo = rust-tools.minimal;
+        rustc = rust-tools.minimal;
+      };
       bindgen_gcc_args = ''
         echo "Extending BINDGEN_EXTRA_CLANG_ARGS with system include paths..." 2>&1
         BINDGEN_EXTRA_CLANG_ARGS="$${BINDGEN_EXTRA_CLANG_ARGS:-}"
@@ -111,15 +115,17 @@
       };
       devShells.default = with pkgs; mkShell {
         buildInputs = [
-          (python3.withPackages (p: [ p.nix-for-py ]))
+          python3
           gdb
           pkg-config
           libclang
           (rust-tools.default.override {
             extensions = ["rust-src" "rust-analyzer"];
           })
+        ] ++ nix-deps;
+        nativeBuildInputs = [
+          rustPlatform.bindgenHook
         ];
-        nativeBuildInputs = [ packages.nix-for-rust ];
       };
     });
 }

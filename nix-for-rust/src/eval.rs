@@ -1,4 +1,4 @@
-use crate::bindings::{alloc_value, expr_eval_from_string, libexpr_init, state_create, state_free, value_decref, EvalState, Value};
+use crate::bindings::{alloc_value, eval_state_build, eval_state_builder, eval_state_builder_free, eval_state_builder_load, eval_state_builder_new, eval_state_builder_set_lookup_path, expr_eval_from_string, libexpr_init, state_create, state_free, value_decref, EvalState, Value};
 use crate::settings::NixSettings;
 use crate::store::{NixContext, NixStore};
 use crate::term::{NixEvalError, NixTerm, ToNix};
@@ -53,27 +53,6 @@ impl NixEvalState {
     self._eval_state.0.as_ptr()
   }
   
-  pub fn new(store: NixStore, settings: NixSettings) -> Result<Self> {
-    let ctx = NixContext::default();
-    let mut lookup_path: Vec<CString> = settings.lookup_path
-      .iter()
-      .map(|path| { Ok(CString::new(path.clone())?)})
-      .collect::<Result<_>>()?;
-    let mut lookup_path: Vec<*const c_char> = lookup_path
-      .iter_mut()
-      .map(|p| p.as_ptr())
-      .chain(std::iter::once(std::ptr::null()))
-      .collect();
-    let state = unsafe {
-      libexpr_init(ctx.ptr());
-      ctx.check_call()?;
-      state_create(ctx.ptr(), lookup_path.as_mut_ptr(), store.store_ptr())
-    };
-    ctx.check_call()?;
-    let state = NonNull::new(state).ok_or(anyhow::format_err!("state_create return null pointer"))?;
-    Ok(NixEvalState { store, settings, _eval_state: Rc::new(StateWrapper(state)) })
-  }
-
   pub fn eval_string(&self, expr: &str, cwd: PathBuf) -> Result<NixTerm> {
     let cstr = CString::new(expr)?;
     let current_dir = cwd.as_path()
@@ -105,33 +84,59 @@ impl NixEvalState {
     self.eval_string(&contents, cwd)
   }
 
-  pub fn eval_flake(&self, flake_path: &str) -> Result<NixTerm> {
-    let has_flakes = |attr| self.settings.get_setting(attr).map(|s| s.contains("flakes")).unwrap_or(false);
-    let is_flake_enabled = has_flakes("extra-experimental-features") || has_flakes("experimental-features");
-    if !is_flake_enabled {
-      anyhow::bail!("Nix Evaluator does not have flakes enabled. Please create it using `extra-experimental-features=flakes`.")
-    }
-    let (flake_path, cwd) = {
-      let path= std::path::Path::new(flake_path);
-      if path.try_exists()? {
-        let canonical_path = std::fs::canonicalize(path)?;
-        (canonical_path
-          .clone()
-          .into_os_string()
-          .into_string()
-          .map_err(|_| anyhow::format_err!("Cannot convert flake path to unicode string"))?, canonical_path)
-      } else {
-        (flake_path.to_string(), std::env::current_dir()?)
-      }
-    };
-    let contents = format!("builtins.getFlake \"{flake_path}\"");
-    self.eval_string(&contents, cwd)
-  }
-
   pub fn builtins(&self) -> Result<NixTerm> {
     self.eval_string("builtins", std::env::current_dir()?)
   }
   
+}
+
+pub struct NixEvalStateBuilder {
+  pub(crate) ptr: NonNull<eval_state_builder>
+}
+
+impl NixEvalStateBuilder {
+  pub fn new(store: &NixStore) -> Result<Self> {
+    let ptr = NixContext::non_null(|ctx| unsafe {
+        eval_state_builder_new(ctx.ptr(), store.store_ptr())
+      })?;
+    Ok(NixEvalStateBuilder { ptr })
+  }
+
+  pub fn load_settings(&mut self) -> Result<()> {
+    NixContext::checking(|ctx| unsafe {
+      eval_state_builder_load(ctx.ptr(), self.ptr.as_ptr());
+    })
+  }
+
+  pub fn set_lookup_path(&mut self, lookup_path: &[String]) -> Result<()> {
+    let mut lookup_path: Vec<CString> = lookup_path
+      .iter()
+      .map(|path| { Ok(CString::new(path.clone())?)})
+      .collect::<Result<_>>()?;
+    let mut lookup_path: Vec<*const c_char> = lookup_path
+      .iter_mut()
+      .map(|p| p.as_ptr())
+      .chain(std::iter::once(std::ptr::null()))
+      .collect();
+    NixContext::checking(|ctx| unsafe {
+        eval_state_builder_set_lookup_path(ctx.ptr(), self.ptr.as_ptr(), lookup_path.as_mut_ptr());
+      })
+  }
+
+  pub fn build(self) -> Result<StateWrapper> {
+    let ptr = NixContext::non_null(|ctx| unsafe {
+        eval_state_build(ctx.ptr(), self.ptr.as_ptr())
+      })?;
+    Ok(StateWrapper(ptr))
+  }
+}
+
+impl Drop for NixEvalStateBuilder {
+  fn drop(&mut self) {
+    unsafe {
+      eval_state_builder_free(self.ptr.as_ptr());
+    }
+  }
 }
 
 impl Drop for StateWrapper {
