@@ -169,9 +169,9 @@ impl Drop for FlakeLockFlags {
 
 pub struct LockedFlake {
   ptr: NonNull<locked_flake>,
-  flags: FlakeLockFlags,
-  flake_ref: FlakeRef,
-  state: NixEvalState
+  state: NixEvalState,
+  pub flags: FlakeLockFlags,
+  pub flake_ref: FlakeRef
 }
 
 impl LockedFlake {
@@ -199,7 +199,6 @@ impl Drop for LockedFlake {
     }
   }
 }
-
 
 impl NixEvalState {
 
