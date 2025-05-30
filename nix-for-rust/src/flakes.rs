@@ -29,7 +29,7 @@ impl Drop for FetchersSettings {
 
 pub struct FlakeRefSettings {
   ptr: NonNull<flake_reference_parse_flags>,
-  settings: FlakeSettings,
+  pub settings: FlakeSettings,
 }
 
 impl FlakeRefSettings {
