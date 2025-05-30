@@ -58,10 +58,10 @@ impl ContentAddressedMethod {
 }
 
 #[derive(Debug)]
-pub enum DerivationOutput {
+pub enum DerivationOutput<'store> {
   Deferred,
   InputAddressed {
-    path: NixStorePath,
+    path: NixStorePath<'store>,
   },
   Impure {
     method: ContentAddressedMethod,
@@ -103,10 +103,10 @@ pub enum DerivationVersion {
 }
 
 #[derive(Debug)]
-pub struct Derivation {
+pub struct Derivation<'store> {
   pub version: DerivationVersion,
   pub name: String,
-  pub outputs: HashMap<String, DerivationOutput>,
+  pub outputs: HashMap<String, DerivationOutput<'store>>,
   pub input_srcs: HashSet<String>,
   pub input_drvs: HashMap<String, InputDrv>,
   pub platform: String,
@@ -115,8 +115,8 @@ pub struct Derivation {
   pub env: HashMap<String, String>
 }
 
-impl DerivationOutput {
-  fn new(store: &NixStore, path: &str, hash_algo: &str, hash: &str) -> Result<Self> {
+impl<'store> DerivationOutput<'store> {
+  fn new(store: &'store NixStore, path: &str, hash_algo: &str, hash: &str) -> Result<Self> {
     if !hash_algo.is_empty() {
       let (rest, method) = ContentAddressedMethod::parse(hash_algo);
       let Some(hash_algo) = HashAlgorithm::parse(rest) else {
@@ -171,7 +171,7 @@ fn string<'src>(input: &'src str) -> ParseRes<'src, String> {
   Ok((input, s.unwrap_or("".to_string())))
 }
 
-fn parse_drv_output<'store, 'src>(store: &'store NixStore, input: &'src str) -> ParseRes<'src, (String, DerivationOutput)> {
+fn parse_drv_output<'store, 'src>(store: &'store NixStore, input: &'src str) -> ParseRes<'src, (String, DerivationOutput<'store>)> {
   let (input, _) = tag("(")(input)?;
   let (input, name) = string(input)?;
   let (input, _) = tag(",")(input)?;
@@ -213,7 +213,7 @@ fn parse_version(input: &str) -> ParseRes<DerivationVersion> {
   alt((traditional, dynamic))(input)
 }
 
-fn parse_derivation<'store, 'src>(store: &'store NixStore, name: String, input: &'src str) -> ParseRes<'src, Derivation> {
+fn parse_derivation<'store, 'src>(store: &'store NixStore, name: String, input: &'src str) -> ParseRes<'src, Derivation<'store>> {
   let (input, version) = parse_version(input)?;
   let (input, outputs) = list(|i| parse_drv_output(store, i))(input)?;
   let (input, _) = tag(",")(input)?;
@@ -258,8 +258,8 @@ impl NixStore {
   }
 }
 
-impl ToNix for Derivation {
-  fn to_nix(self, eval_state: &NixEvalState) -> NixResult<NixTerm> {
+impl<'store, 'state> ToNix<'state> for Derivation<'store> {
+  fn to_nix(self, eval_state: &'state NixEvalState) -> NixResult<NixTerm<'state>> {
     let mut args: HashMap<&str, NixTerm> = self.env
       .iter()
       .map(|(k, v)| (k.as_str(), v.into()))

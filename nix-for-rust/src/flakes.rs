@@ -1,8 +1,9 @@
-use std::{path::Path, ptr::{null_mut, NonNull}, rc::Rc};
+use std::{path::Path, ptr::{null_mut, NonNull}};
 use anyhow::Result;
 use nix::NixPath;
 
-use crate::{bindings::{fetchers_settings, fetchers_settings_free, fetchers_settings_new, flake_lock, flake_lock_flags, flake_lock_flags_add_input_override, flake_lock_flags_free, flake_lock_flags_new, flake_lock_flags_set_mode_check, flake_lock_flags_set_mode_virtual, flake_reference, flake_reference_and_fragment_from_string, flake_reference_free, flake_reference_parse_flags, flake_reference_parse_flags_new, flake_reference_parse_flags_set_base_directory, flake_settings, flake_settings_free, flake_settings_new, locked_flake, locked_flake_free, locked_flake_get_output_attrs, setting_set}, eval::{NixEvalState, RawValue, ValueWrapper}, store::NixContext, term::{NixTerm, ToNix}, utils::{callback_get_result_string, callback_get_result_string_data}};
+use crate::bindings::{fetchers_settings, fetchers_settings_free, fetchers_settings_new, flake_lock, flake_lock_flags, flake_lock_flags_add_input_override, flake_lock_flags_free, flake_lock_flags_new, flake_lock_flags_set_mode_check, flake_lock_flags_set_mode_virtual, flake_reference, flake_reference_and_fragment_from_string, flake_reference_free, flake_reference_parse_flags, flake_reference_parse_flags_new, flake_reference_parse_flags_set_base_directory, flake_settings, flake_settings_free, flake_settings_new, locked_flake, locked_flake_free, locked_flake_get_output_attrs, setting_set};
+  use crate::{eval::{NixEvalState, RawValue}, store::NixContext, term::{NixTerm, ToNix}, utils::{callback_get_result_string, callback_get_result_string_data}};
 
 #[derive(Clone)]
 pub struct FetchersSettings {
@@ -107,7 +108,7 @@ impl FlakeSettings {
       let key = "experimental-features".to_string();
       let val = "flakes".to_string();
       setting_set(ctx.ptr(), key.as_ptr() as *const i8, val.as_ptr() as *const i8)
-    });
+    })?;
     Ok(FlakeSettings { settings_ptr, fetchers_settings })
   }
 }
@@ -167,14 +168,14 @@ impl Drop for FlakeLockFlags {
 }
 
 
-pub struct LockedFlake {
+pub struct LockedFlake<'state> {
   ptr: NonNull<locked_flake>,
-  state: NixEvalState,
+  state: &'state NixEvalState,
   pub flags: FlakeLockFlags,
   pub flake_ref: FlakeRef
 }
 
-impl LockedFlake {
+impl<'state> LockedFlake<'state> {
   pub fn outputs(&self) -> Result<NixTerm> {
     let value = NixContext::non_null(|ctx| unsafe {
       locked_flake_get_output_attrs(
@@ -184,15 +185,15 @@ impl LockedFlake {
         self.ptr.as_ptr())
     })?;
     let raw_value = RawValue {
-      _state: self.state.clone(),
-      value: Rc::new(ValueWrapper(value))
+      _state: self.state,
+      value
     };
     raw_value.to_nix(&self.state)
       .map_err(|e| e.into())
   }
 }
 
-impl Drop for LockedFlake {
+impl<'state> Drop for LockedFlake<'state> {
   fn drop(&mut self) {
     unsafe {
       locked_flake_free(self.ptr.as_ptr());
@@ -202,13 +203,13 @@ impl Drop for LockedFlake {
 
 impl NixEvalState {
 
-  fn flake_settings(&self) -> Result<&FlakeSettings> {
+  pub fn flake_settings(&self) -> Result<&FlakeSettings> {
     self.settings.flake_settings
       .as_ref()
       .ok_or(anyhow::format_err!("NixEvalState was not initialized with flakes enabled."))
   }
   
-  pub fn lock_flake(&self, flake_ref: FlakeRef, lock_flags: FlakeLockFlags) -> Result<LockedFlake> {
+  pub fn lock_flake<'state>(&'state self, flake_ref: FlakeRef, lock_flags: FlakeLockFlags) -> Result<LockedFlake<'state>> {
     let ptr = NixContext::non_null(|ctx| unsafe {
       flake_lock(
         ctx.ptr(),
@@ -218,7 +219,7 @@ impl NixEvalState {
         lock_flags.ptr.as_ptr(),
         flake_ref.ref_ptr.as_ptr())
     })?;
-    Ok(LockedFlake { ptr, flags: lock_flags, flake_ref, state: self.clone() })
+    Ok(LockedFlake { ptr, flags: lock_flags, flake_ref, state: self })
   }
   
 }

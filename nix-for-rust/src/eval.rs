@@ -1,4 +1,4 @@
-use crate::bindings::{alloc_value, eval_state_build, eval_state_builder, eval_state_builder_free, eval_state_builder_load, eval_state_builder_new, eval_state_builder_set_lookup_path, expr_eval_from_string, libexpr_init, state_create, state_free, value_decref, EvalState, Value};
+use crate::bindings::{alloc_value, eval_state_build, eval_state_builder, eval_state_builder_free, eval_state_builder_load, eval_state_builder_new, eval_state_builder_set_lookup_path, expr_eval_from_string, libexpr_init, state_create, state_free, value_decref, value_incref, EvalState, Value};
 use crate::settings::NixSettings;
 use crate::store::{NixContext, NixStore};
 use crate::term::{NixEvalError, NixTerm, ToNix};
@@ -6,61 +6,55 @@ use std::path::PathBuf;
 use std::ptr::NonNull;
 use std::ffi::{c_char, CString};
 use anyhow::Result;
-use std::rc::Rc;
 
-#[derive(Clone)]
-pub struct RawValue {
-  pub _state: NixEvalState,
-  pub value: Rc<ValueWrapper>
+pub struct RawValue<'state> {
+  pub _state: &'state NixEvalState,
+  pub value: NonNull<Value>
 }
 
 pub struct ValueWrapper(pub NonNull<Value>);
 
-impl RawValue {
-  pub fn empty(state: NixEvalState) -> Self {
-    let value = unsafe {
-      alloc_value(state.store.ctx._ctx.as_ptr(), state.state_ptr())
-    };
-    let value: NonNull<Value> = match NonNull::new(value) {
-      Some(v) => v,
-      None => panic!("alloc_value returned null"),
-    };
+impl<'state> RawValue<'state> {
+  pub fn empty(state: &'state NixEvalState) -> Self {
+    let value = NixContext::non_null(|ctx| unsafe {
+      alloc_value(ctx.ptr(), state.state_ptr())
+    }).expect("alloc_value should never return null");
     RawValue {
       _state: state,
-      value: Rc::new(ValueWrapper(value))
+      value
     }
   }
 }
 
-impl ValueWrapper {
-  pub fn as_ptr(&self) -> *mut Value {
-    self.0.as_ptr()
+impl<'state> Clone for RawValue<'state> {
+  fn clone(&self) -> Self {
+    NixContext::checking(|ctx| unsafe {
+      value_incref(ctx.ptr(), self.value.as_ptr())
+    }).expect("error while increasing reference count");
+    RawValue { _state: &self._state, value: self.value }
   }
 }
 
-#[derive(Clone)]
 pub struct NixEvalState {
   pub store: NixStore,
   pub settings: NixSettings,
-  pub _eval_state: Rc<StateWrapper>
+  pub _eval_state: NonNull<EvalState>
 }
-
-pub struct StateWrapper(pub NonNull<EvalState>);
 
 impl NixEvalState {
 
   pub fn state_ptr(&self) -> *mut EvalState {
-    self._eval_state.0.as_ptr()
+    self._eval_state.as_ptr()
   }
   
-  pub fn eval_string(&self, expr: &str, cwd: PathBuf) -> Result<NixTerm> {
+  pub fn eval_string<'state>(&'state self, expr: &str, cwd: PathBuf) -> Result<NixTerm<'state>> {
     let cstr = CString::new(expr)?;
     let current_dir = cwd.as_path()
       .to_str()
       .ok_or_else(|| anyhow::format_err!("Cannot get current directory"))?
       .to_owned();
     let current_dir = CString::new(current_dir)?;
-    let val = RawValue::empty(self.clone());
+    let val = RawValue::empty(self);
     unsafe {
       expr_eval_from_string(
         self.store.ctx.ptr(),
@@ -73,7 +67,7 @@ impl NixEvalState {
     val.to_nix(self).map_err(|err: NixEvalError| anyhow::anyhow!(err))
   }
 
-  pub fn eval_file<P: AsRef<std::path::Path>>(&self, file: P) -> Result<NixTerm> {
+  pub fn eval_file<'state, P: AsRef<std::path::Path>>(&'state self, file: P) -> Result<NixTerm<'state>> {
     let contents = std::fs::read_to_string(&file)?;
     let realpath = std::fs::canonicalize(file)?;
     let cwd = if realpath.is_dir() {
@@ -84,7 +78,7 @@ impl NixEvalState {
     self.eval_string(&contents, cwd)
   }
 
-  pub fn builtins(&self) -> Result<NixTerm> {
+  pub fn builtins<'state>(&'state self) -> Result<NixTerm<'state>> {
     self.eval_string("builtins", std::env::current_dir()?)
   }
   
@@ -123,11 +117,14 @@ impl NixEvalStateBuilder {
       })
   }
 
-  pub fn build(self) -> Result<StateWrapper> {
+  pub fn build(self) -> Result<NonNull<EvalState>> {
+    NixContext::checking(|ctx| unsafe {
+      libexpr_init(ctx.ptr());
+    })?;
     let ptr = NixContext::non_null(|ctx| unsafe {
-        eval_state_build(ctx.ptr(), self.ptr.as_ptr())
-      })?;
-    Ok(StateWrapper(ptr))
+      eval_state_build(ctx.ptr(), self.ptr.as_ptr())
+    })?;
+    Ok(ptr)
   }
 }
 
@@ -139,20 +136,18 @@ impl Drop for NixEvalStateBuilder {
   }
 }
 
-impl Drop for StateWrapper {
+impl Drop for NixEvalState {
   fn drop(&mut self) {
     unsafe {
-      state_free(self.0.as_ptr());
+      state_free(self.state_ptr());
     }
   }
 }
 
-impl Drop for ValueWrapper {
+impl<'state> Drop for RawValue<'state> {
   fn drop(&mut self) {
-    let ctx = NixContext::default();
-    unsafe {
-      value_decref(ctx.ptr(), self.as_ptr());
-      ctx.check_call().unwrap();
-    }
+    NixContext::checking(|ctx| unsafe {
+      value_decref(ctx.ptr(), self.value.as_ptr());
+    }).expect("error while freeing a RawValue")
   }
 }

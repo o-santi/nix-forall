@@ -24,27 +24,27 @@ fn wait_till_syscall_exit(pid: Pid) -> Result<()> {
 
 impl FileAccess {
   fn from_syscall(pid: Pid) -> Result<Option<Self>> {
-    let regs = ptrace::getregs(pid)?;
+    let regs = ptrace::sysgetregs(pid)?;
     let syscall = regs.orig_rax;
     match syscall {
       0 => {
-        let regs = ptrace::getregs(pid)?;
+        let regs = ptrace::sysgetregs(pid)?;
         Ok(Some(FileAccess::FileRead { fd: regs.rdi }))
       }
       2 => { // open
         let path = read_path_from_register(pid, regs.rdi as *mut c_void);
         wait_till_syscall_exit(pid)?;
-        let regs = ptrace::getregs(pid)?;
+        let regs = ptrace::sysgetregs(pid)?;
         Ok(Some(FileAccess::OpenFile { path, out_fd: regs.rax }))
       },
       257 => { // openat
         let path = read_path_from_register(pid, regs.rsi as *mut c_void);
         wait_till_syscall_exit(pid)?;
-        let regs = ptrace::getregs(pid)?;
+        let regs = ptrace::sysgetregs(pid)?;
         Ok(Some(FileAccess::OpenFile { path, out_fd: regs.rax }))
       }
       78 | 217 => { // getdents, getdents64
-        let regs = ptrace::getregs(pid)?;
+        let regs = ptrace::sysgetregs(pid)?;
         wait_till_syscall_exit(pid)?;
         Ok(Some(FileAccess::ListDir { fd: regs.rdi }))
       }

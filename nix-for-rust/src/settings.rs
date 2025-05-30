@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::rc::Rc;
 use anyhow::Result;
 use nix::sys::resource::{Resource, setrlimit, getrlimit};
 
@@ -8,7 +7,6 @@ use crate::bindings::{flake_settings_add_to_eval_state_builder, libexpr_init, li
 use crate::flakes::FlakeSettings;
 use crate::store::{NixContext, NixStore};
 
-#[derive(Clone)]
 pub struct NixSettings {
   pub settings: HashMap<String, String>,
   pub store_params: HashMap<String, String>,
@@ -80,21 +78,19 @@ impl NixSettings {
       ctx.check_call().expect("Couldn't initialize libexpr");
     }
     
-    let store = NixStore::new(ctx.clone(), store_path, self.store_params.clone())?;
+    let store = NixStore::new(ctx, store_path, self.store_params.clone())?;
     let mut state_builder = NixEvalStateBuilder::new(&store)?;
 
     if let Some(flake_settings) = &self.flake_settings {
-      unsafe {
+      NixContext::checking(|ctx| unsafe {
         flake_settings_add_to_eval_state_builder(ctx.ptr(), flake_settings.settings_ptr.as_ptr(), state_builder.ptr.as_ptr());
-      }
-      ctx.check_call()?;
+      })?;
     }
     
     for (key, val) in self.settings.iter() {
-      unsafe {
+      NixContext::checking(|ctx| unsafe {
         setting_set(ctx.ptr(), key.as_ptr() as *const i8, val.as_ptr() as *const i8);
-      };
-      ctx.check_call()?;
+      })?;
     }
 
     state_builder.load_settings()?;
@@ -104,7 +100,7 @@ impl NixSettings {
     Ok(NixEvalState {
       store,
       settings: self,
-      _eval_state: Rc::new(state_builder.build()?)
+      _eval_state: state_builder.build()?
     })
   }
 }

@@ -1,18 +1,17 @@
 #![allow(non_upper_case_globals)]
 use std::collections::HashMap;
-use std::rc::Rc;
 use std::ffi::{c_char, c_uint, CStr, CString};
 use std::ptr::NonNull;
 use std::path::PathBuf;
 use crate::bindings::{bindings_builder_free, bindings_builder_insert, get_attr_byidx, get_attr_byname, get_attr_name_byidx, get_attrs_size, get_bool, get_float, get_int, get_list_byidx, get_list_size, get_path_string, get_string, get_type, init_bool, init_float, init_int, init_null, init_path_string, init_string, list_builder_insert, make_attrs, make_bindings_builder, make_list, make_list_builder, realised_string_get_buffer_size, realised_string_get_buffer_start, realised_string_get_store_path, realised_string_get_store_path_count, string_realise, value_call, value_force, ValueType};
 use crate::error::NixError;
-use crate::eval::{NixEvalState, RawValue, ValueWrapper};
+use crate::eval::{NixEvalState, RawValue};
 use crate::store::{NixContext, NixStorePath};
 use crate::utils::{callback_get_result_string, callback_get_result_string_data};
 use thiserror::Error;
 
 /// Type of hashmaps that can be represented as a nix attrset
-pub type AttrSet<'str> = std::collections::HashMap<&'str str, NixTerm>;
+pub type AttrSet<'str, 'state> = std::collections::HashMap<&'str str, NixTerm<'state>>;
 
 /// An error that might happen when evaluating nix expressions.
 #[derive(Debug, Error)]
@@ -36,54 +35,54 @@ pub type NixResult<T> = Result<T, NixEvalError>;
 
 /// Wrapper around a pointer to nix attribute set.
 #[derive(Clone)]
-pub struct NixAttrSet(pub(crate) RawValue);
+pub struct NixAttrSet<'state>(pub(crate) RawValue<'state>);
 /// Wrapper around a pointer to nix list.
 #[derive(Clone)]
-pub struct NixList(pub(crate) RawValue);
+pub struct NixList<'state>(pub(crate) RawValue<'state>);
 /// Wrapper around a pointer to nix function.
 #[derive(Clone)]
-pub struct NixFunction(pub(crate) RawValue);
+pub struct NixFunction<'state>(pub(crate) RawValue<'state>);
 /// Wrapper around a pointer to nix thunk
 #[derive(Clone)]
-pub struct NixThunk(pub(crate) RawValue);
+pub struct NixThunk<'state>(pub(crate) RawValue<'state>);
 
-pub struct NixRealisedString {
+pub struct NixRealisedString<'store> {
   pub string: String,
-  pub paths: Vec<NixStorePath>
+  pub paths: Vec<NixStorePath<'store>>
 }
 
 /// A nix term represented as a rust value.
-pub enum NixTerm {
+pub enum NixTerm<'state> {
   Null,
-  Thunk(NixThunk),
+  Thunk(NixThunk<'state>),
   Int(i64),
   Float(f64),
   Bool(bool),
-  List(NixList),
+  List(NixList<'state>),
   Path(PathBuf),
-  AttrSet(NixAttrSet),
+  AttrSet(NixAttrSet<'state>),
   String(String),
-  External(RawValue),
-  Function(NixFunction)
+  External(RawValue<'state>),
+  Function(NixFunction<'state>)
 }
 
 /// Conversion trait between rust objects and nix values.
-pub trait ToNix {
-  fn to_nix(self, eval_state: &NixEvalState) -> NixResult<NixTerm>;
+pub trait ToNix<'state> {
+  fn to_nix(self, eval_state: &'state NixEvalState) -> NixResult<NixTerm<'state>>;
 }
 
-pub trait FromIterToNix<I>: Sized {
-  fn from_iter_to_nix<T>(iter: T, state: &NixEvalState) -> NixResult<Self>
+pub trait FromIterToNix<'state, I>: Sized {
+  fn from_iter_to_nix<T>(iter: T, state: &'state NixEvalState) -> NixResult<Self>
     where T: IntoIterator<Item=I> + ExactSizeIterator;
 }
 
-pub trait CollectToNix<T>: Iterator<Item=T> + Sized + ExactSizeIterator {
-  fn collect_to_nix<O: FromIterToNix<T>>(self, state: &NixEvalState) -> NixResult<O> {
+pub trait CollectToNix<'state, T>: Iterator<Item=T> + Sized + ExactSizeIterator {
+  fn collect_to_nix<O: FromIterToNix<'state, T>>(self, state: &'state NixEvalState) -> NixResult<O> {
     O::from_iter_to_nix(self, state)
   }
 }
 
-impl<T, I: Iterator<Item=T> + Sized + ExactSizeIterator> CollectToNix<T> for I {}
+impl<'state, T, I: Iterator<Item=T> + Sized + ExactSizeIterator> CollectToNix<'state, T> for I {}
 
 /// Trait to print a nix term, which may throw errors during evaluation time.
 pub trait Repr {
@@ -96,14 +95,14 @@ pub trait Repr {
   }
 }
 
-impl<N: Into<NixTerm>> ToNix for N {
-  fn to_nix(self, _eval_state: &NixEvalState) -> NixResult<NixTerm> {
+impl<'state, N: Into<NixTerm<'state>>> ToNix<'state> for N {
+  fn to_nix(self, _eval_state: &'state NixEvalState) -> NixResult<NixTerm<'state>> {
     Ok(self.into())
   }
 }
 
-impl ToNix for RawValue {
-  fn to_nix(self, _eval_state: &NixEvalState) -> NixResult<NixTerm> {
+impl<'state> ToNix<'state> for RawValue<'state> {
+  fn to_nix(self, _eval_state: &'state NixEvalState) -> NixResult<NixTerm<'state>> {
     let context = NixContext::default();
     let ctx = context.ptr();
     let value = self.value.as_ptr();
@@ -149,27 +148,27 @@ impl ToNix for RawValue {
 }
 
 /// Iterator over elements in a nix list
-pub struct NixListIterator {
+pub struct NixListIterator<'state, 'val: 'state> {
   pub len: u32,
-  pub(crate) val: NixList,
+  pub(crate) val: &'val NixList<'state>,
   pub(crate) idx: u32
 }
 
 /// Iterator over items in a nix attribute set
-pub struct NixItemsIterator {
+pub struct NixItemsIterator<'state, 'val: 'state> {
   pub len: u32,
-  pub(crate) val: NixAttrSet,
+  pub(crate) val: &'val NixAttrSet<'state>,
   pub(crate) idx: u32
 }
 
 /// Iterator over keys in a nix attribute set
-pub struct NixNamesIterator {
+pub struct NixNamesIterator<'state, 'val: 'state> {
   pub len: u32,
-  pub(crate) val: NixAttrSet,
+  pub(crate) val: &'val NixAttrSet<'state>,
   pub(crate) idx: u32
 }
 
-impl Repr for NixAttrSet {
+impl<'state> Repr for NixAttrSet<'state> {
   fn repr_rec(&self, s: &mut String) -> NixResult<()> {
     s.push('{');
     for (key, val) in self.items()? {
@@ -191,7 +190,7 @@ impl Repr for NixAttrSet {
   }
 }
 
-impl NixAttrSet {
+impl<'state> NixAttrSet<'state> {
   
   /// Tries to build an attribute set as if it was a derivation.
   /// 
@@ -226,7 +225,7 @@ impl NixAttrSet {
   /// Gets an attribute from the underlying attribute set.
   ///
   /// Throws [`RuntimeError(KeyError)`][NixError] when the key doesn't exist.
-  pub fn get(&self, name: &str) -> NixResult<NixTerm> {
+  pub fn get(&self, name: &str) -> NixResult<NixTerm<'state>> {
     let ctx = &self.0._state.store.ctx;
     let state = &self.0._state;
     let name = CString::new(name).map_err(|_| NixEvalError::InvalidString)?;
@@ -236,8 +235,8 @@ impl NixAttrSet {
     ctx.check_call()?;
     let value = NonNull::new(val).expect("get_attr_by_name returned null");
     let rawvalue = RawValue {
-      value: Rc::new(ValueWrapper(value)),
-      _state: state.clone()
+      value,
+      _state: state
     };
     rawvalue.to_nix(&self.0._state)
   }
@@ -257,7 +256,7 @@ impl NixAttrSet {
   /// Returns an iterator over the keys of the attribute set.
   pub fn names(&self) -> NixResult<NixNamesIterator> {
     let iterator = NixNamesIterator {
-      val: self.clone(), len: self.len()?, idx: 0
+      val: &self, len: self.len()?, idx: 0
     };
     Ok(iterator)
   }
@@ -265,16 +264,16 @@ impl NixAttrSet {
   /// Returns an iterator over the pairs `(String, NixTerm)` of the attribute set.
   pub fn items(&self) -> NixResult<NixItemsIterator> {
     let iterator = NixItemsIterator {
-      val: self.clone(), len: self.len()?, idx: 0
+      val: &self, len: self.len()?, idx: 0
     };
     Ok(iterator)
   }
 }
 
-impl NixThunk {
+impl<'state> NixThunk<'state> {
   /// Forces the evaluation of the thunk and resolves it into
   /// a non-thunk term.
-  pub fn force(self) -> NixResult<NixTerm> {
+  pub fn force(self) -> NixResult<NixTerm<'state>> {
     let rawvalue = &self.0;
     let context = rawvalue._state.store.ctx.ptr();
     let state = rawvalue._state.state_ptr();
@@ -287,12 +286,12 @@ impl NixThunk {
   }
 }
 
-impl NixFunction {
+impl<'state> NixFunction<'state> {
   /// Calls the nix function with the argument converted to nix.
-  pub fn call_with<T: ToNix>(&self, arg: T) -> NixResult<NixTerm> {
+  pub fn call_with<T: ToNix<'state>>(&self, arg: T) -> NixResult<NixTerm<'state>> {
     let state = self.0._state.state_ptr();
     let arg = arg.to_nix(&self.0._state)?.to_raw_value(&self.0._state);
-    let ret = RawValue::empty(self.0._state.clone());
+    let ret = RawValue::empty(self.0._state);
     let ctx = NixContext::default();
     unsafe {
       value_call(ctx.ptr(), state, self.0.value.as_ptr(), arg.value.as_ptr(), ret.value.as_ptr());
@@ -302,7 +301,7 @@ impl NixFunction {
   }
 }
 
-impl NixList {
+impl<'state> NixList<'state> {
 
   /// How many elements are there in the list.
   pub fn len(&self) -> NixResult<u32> {
@@ -319,7 +318,7 @@ impl NixList {
   /// Returns the iterator over the elements in a list
   pub fn iter(&self) -> NixResult<NixListIterator> {
     let iterator = NixListIterator {
-      val: self.clone(), len: self.len()?, idx: 0
+      val: &self, len: self.len()?, idx: 0
     };
     Ok(iterator)
   }
@@ -332,16 +331,16 @@ impl NixList {
       return Err(NixEvalError::IndexOutOfBounds)
     }
     let elem = unsafe { get_list_byidx(raw._state.store.ctx.ptr(), raw.value.as_ptr(), raw._state.state_ptr(), idx as c_uint) };
-    let elem = NonNull::new(elem).expect("get_list_byidx returned null");
+    let value = NonNull::new(elem).expect("get_list_byidx returned null");
     let rawvalue = RawValue {
-      _state: raw._state.clone(),
-      value: Rc::new(ValueWrapper(elem))
+      _state: raw._state,
+      value
     };
     rawvalue.to_nix(&raw._state)
   }
 }
 
-impl Repr for NixList {
+impl<'state> Repr for NixList<'state> {
   fn repr_rec(&self, s: &mut String) -> NixResult<()> {
     s.push('[');
     for t in self.iter()? {
@@ -360,7 +359,7 @@ impl Repr for NixList {
   }
 }
 
-impl NixTerm {
+impl<'state> NixTerm<'state> {
 
   /// Builds the term if the term is an attribute set, otherwise type error.
   pub fn build(&self) -> anyhow::Result<NixRealisedString> {
@@ -390,7 +389,7 @@ impl NixTerm {
   }
 
   /// Returns the iterator over names if the element is an attrset, otherwise type error.
-  pub fn names(&self) -> NixResult<NixNamesIterator> {
+  pub fn names<'slf>(&'slf self) -> NixResult<NixNamesIterator<'state, 'slf>> {
     if let NixTerm::AttrSet(attrset) = self {
       attrset.names()
     } else {
@@ -399,7 +398,7 @@ impl NixTerm {
   }
 
   /// Returns the iterator over items if the element is an attrset, otherwise type error.
-  pub fn items(&self) -> NixResult<NixItemsIterator> {
+  pub fn items<'slf>(&'slf self) -> NixResult<NixItemsIterator<'state, 'slf>> {
     if let NixTerm::AttrSet(attrset) = self {
       attrset.items()
     } else {
@@ -407,7 +406,7 @@ impl NixTerm {
     }
   }
   
-  pub fn iter(&self) -> NixResult<NixListIterator> {
+  pub fn iter<'slf>(&'slf self) -> NixResult<NixListIterator<'state, 'slf>> {
     if let NixTerm::List(list) = self {
       list.iter()
     }
@@ -416,10 +415,10 @@ impl NixTerm {
     }
   }
   
-  pub fn to_raw_value(self, _state: &NixEvalState) -> RawValue {
+  pub fn to_raw_value(self, _state: &'state NixEvalState) -> RawValue<'state> {
     let ctx = _state.store.ctx.ptr();
     let state = _state.state_ptr();
-    let mut rawval = RawValue::empty(_state.clone());
+    let mut rawval = RawValue::empty(_state);
     let val_ptr = rawval.value.as_ptr();
     match self {
       NixTerm::External(raw)  => { rawval = raw; }
@@ -457,7 +456,7 @@ impl NixTerm {
     rawval
   }
   
-  pub fn call_with<T: ToNix>(self, arg: T) -> NixResult<NixTerm> {
+  pub fn call_with<T: ToNix<'state>>(self, arg: T) -> NixResult<NixTerm<'state>> {
     if let NixTerm::Function(func) = self {
       func.call_with(arg)
     } else {
@@ -465,7 +464,7 @@ impl NixTerm {
     }
   }
   
-  pub fn get(&self, name: &str) -> NixResult<NixTerm> {
+  pub fn get(&self, name: &str) -> NixResult<NixTerm<'state>> {
     if let NixTerm::AttrSet(attrset) = self {
       attrset.get(name)
     } else {
@@ -473,7 +472,7 @@ impl NixTerm {
     }
   }
 
-  pub fn get_attrs<S: AsRef<str>, P: IntoIterator<Item=S>>(self, path: P) -> NixResult<NixTerm> {
+  pub fn get_attrs<S: AsRef<str>, P: IntoIterator<Item=S>>(self, path: P) -> NixResult<NixTerm<'state>> {
     let mut attrset = self;
     for attr in path {
       attrset = attrset.get(attr.as_ref())?;
@@ -510,11 +509,11 @@ impl NixTerm {
     Ok(s.to_string())
   }
 
-  pub fn as_list(&self) -> NixResult<Vec<NixTerm>> {
+  pub fn as_list<'slf: 'state>(&'slf self) -> NixResult<Vec<NixTerm<'state>>> {
     self.iter()?.collect::<NixResult<_>>()
   }
 
-  pub fn as_hashmap(&self) -> NixResult<HashMap<String, NixResult<NixTerm>>> {
+  pub fn as_hashmap<'slf: 'state>(&'slf self) -> NixResult<HashMap<String, NixResult<NixTerm<'state>>>> {
     Ok(self.items()?.collect())
   }
 
@@ -527,7 +526,7 @@ impl NixTerm {
 
 }
 
-impl Repr for NixTerm {
+impl<'state> Repr for NixTerm<'state> {
   fn repr_rec(&self, s: &mut String) -> NixResult<()> {
     match self {
       NixTerm::Null => s.push_str("null"),
@@ -546,8 +545,8 @@ impl Repr for NixTerm {
   }
 }
 
-impl Iterator for NixListIterator {
-  type Item = NixResult<NixTerm>;
+impl<'state, 'val: 'state> Iterator for NixListIterator<'state, 'val> {
+  type Item = NixResult<NixTerm<'state>>;
   
   fn next(&mut self) -> Option<Self::Item> {
     if self.idx == self.len {
@@ -559,8 +558,8 @@ impl Iterator for NixListIterator {
   }
 }
 
-impl Iterator for NixItemsIterator {
-  type Item = (String, NixResult<NixTerm>);
+impl<'state, 'val: 'state> Iterator for NixItemsIterator<'state, 'val> {
+  type Item = (String, NixResult<NixTerm<'state>>);
   
   fn next(&mut self) -> Option<Self::Item> {
     if self.idx == self.len {
@@ -582,14 +581,14 @@ impl Iterator for NixItemsIterator {
     };
     let elem = NonNull::new(elem).expect("get_attr_byidx returned null");
     let rawvalue = RawValue {
-      _state: raw._state.clone(),
-      value: Rc::new(ValueWrapper(elem))
+      _state: raw._state,
+      value: elem
     };
     Some((name, rawvalue.to_nix(&raw._state)))
   }
 }
 
-impl Iterator for NixNamesIterator {
+impl<'state, 'val: 'state> Iterator for NixNamesIterator<'state, 'val> {
   type Item = String;
   
   fn next(&mut self) -> Option<Self::Item> {
@@ -611,56 +610,56 @@ impl Iterator for NixNamesIterator {
   }
 }
 
-impl From<String> for NixTerm {
+impl<'state> From<String> for NixTerm<'state> {
   fn from(val: String) -> Self {
     NixTerm::String(val)
   }
 }
 
-impl From<&String> for NixTerm {
+impl<'state> From<&String> for NixTerm<'state> {
   fn from(val: &String) -> Self {
     NixTerm::String(val.clone())
   }
 }
 
-impl From<&str> for NixTerm {
+impl<'state> From<&str> for NixTerm<'state> {
   fn from(val: &str) -> Self {
     NixTerm::String(val.to_string())
   }
 }
 
-impl From<i64> for NixTerm {
+impl<'state> From<i64> for NixTerm<'state> {
   fn from(val: i64) -> Self {
     NixTerm::Int(val)
   }
 }
 
-impl From<PathBuf> for NixTerm {
+impl<'state> From<PathBuf> for NixTerm<'state> {
   fn from(val: PathBuf) -> Self {
     NixTerm::Path(val)
   }
 }
 
-impl From<bool> for NixTerm {
+impl<'state> From<bool> for NixTerm<'state> {
   fn from(val: bool) -> Self {
     NixTerm::Bool(val)
   }
 }
 
-impl From<NixList> for NixTerm {
-  fn from(val: NixList) -> Self {
+impl<'state> From<NixList<'state>> for NixTerm<'state> {
+  fn from(val: NixList<'state>) -> Self {
     NixTerm::List(val)
   }
 }
 
-impl From<NixAttrSet> for NixTerm {
-  fn from(val: NixAttrSet) -> Self {
+impl<'state> From<NixAttrSet<'state>> for NixTerm<'state> {
+  fn from(val: NixAttrSet<'state>) -> Self {
     NixTerm::AttrSet(val)
   }
 }
 
-impl<N: ToNix> FromIterToNix<N> for NixList {
-  fn from_iter_to_nix<T>(iter: T, state: &NixEvalState) -> NixResult<Self>
+impl<'state, N: ToNix<'state>> FromIterToNix<'state, N> for NixList<'state> {
+  fn from_iter_to_nix<T>(iter: T, state: &'state NixEvalState) -> NixResult<Self>
   where T: IntoIterator<Item=N> + ExactSizeIterator {
     let ctx = state.store.ctx.ptr();
     let list_builder = unsafe {
@@ -671,14 +670,15 @@ impl<N: ToNix> FromIterToNix<N> for NixList {
       unsafe {
         list_builder_insert(ctx, list_builder, idx as c_uint, value.value.as_ptr());
       }
+      state.store.ctx.check_call()?;
     }
-    let value = RawValue::empty(state.clone());
+    let value = RawValue::empty(state);
     unsafe { make_list(ctx, list_builder, value.value.as_ptr()) };
     Ok(NixList(value))
   }
 }
-impl<S: AsRef<str>, N: ToNix> FromIterToNix<(S, N)> for NixAttrSet {
-  fn from_iter_to_nix<T>(iter: T, state: &NixEvalState) -> NixResult<Self>
+impl<'state, S: AsRef<str>, N: ToNix<'state>> FromIterToNix<'state, (S, N)> for NixAttrSet<'state> {
+  fn from_iter_to_nix<T>(iter: T, state: &'state NixEvalState) -> NixResult<Self>
   where T: IntoIterator<Item=(S, N)> + ExactSizeIterator {
     let ctx = state.store.ctx.ptr();
     let bindings_builder = unsafe {
@@ -694,7 +694,7 @@ impl<S: AsRef<str>, N: ToNix> FromIterToNix<(S, N)> for NixAttrSet {
       state.store.ctx.check_call().unwrap();
     }
     let ctx = NixContext::default();
-    let value = RawValue::empty(state.clone());
+    let value = RawValue::empty(state);
     unsafe { make_attrs(ctx.ptr(), value.value.as_ptr(), bindings_builder) };
     ctx.check_call()?;
     unsafe { bindings_builder_free(bindings_builder); }
@@ -704,8 +704,8 @@ impl<S: AsRef<str>, N: ToNix> FromIterToNix<(S, N)> for NixAttrSet {
 }
 
 // TODO: re-implement without re-allocating
-impl<E, O: FromIterToNix<E>> FromIterToNix<NixResult<E>> for O {
-  fn from_iter_to_nix<T>(iter: T, state: &NixEvalState) -> NixResult<Self>
+impl<'state, E, O: FromIterToNix<'state, E>> FromIterToNix<'state, NixResult<E>> for O {
+  fn from_iter_to_nix<T>(iter: T, state: &'state NixEvalState) -> NixResult<Self>
   where T: IntoIterator<Item=NixResult<E>> + ExactSizeIterator {
     let iter: Vec<E> = iter.into_iter().collect::<NixResult<_>>()?;
     iter.into_iter().collect_to_nix(state)

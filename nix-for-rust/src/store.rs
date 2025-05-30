@@ -8,9 +8,8 @@ use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 use std::ptr::{null_mut, NonNull};
 use anyhow::Result;
-use std::rc::Rc;
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct NixContext {
   pub(crate) _ctx: NonNull<c_context>,
 }
@@ -58,24 +57,23 @@ impl NixContext {
   }
 }
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct NixStore {
   pub ctx: NixContext,
-  pub _store: Rc<StoreWrapper>
+  pub _store: NonNull<Store>
 }
 
 #[derive(Debug)]
-pub struct NixStorePath {
+pub struct NixStorePath<'store> {
   pub path: PathBuf,
+  pub store: &'store NixStore,
   pub(crate) _ptr: NonNull<StorePath>
 }
-
-pub struct StoreWrapper(NonNull<Store>);
 
 impl NixStore {
 
   pub(crate) fn store_ptr(&self) -> *mut Store {
-    self._store.0.as_ptr()
+    self._store.as_ptr()
   }
   
   pub fn new<I: IntoIterator<Item=(S, S)>, S: Into<Vec<u8>>>(ctx: NixContext, uri: &str, extra_params: I) -> Result<Self> {
@@ -102,7 +100,7 @@ impl NixStore {
     };
     ctx.check_call()?;
     let store = NonNull::new(_store).ok_or(anyhow::anyhow!("nix_store_open returned null"))?;
-    Ok(NixStore { ctx, _store: Rc::new(StoreWrapper(store)) })
+    Ok(NixStore { ctx, _store: store })
   }
   
   pub fn version(&self) -> Result<String> {
@@ -119,13 +117,14 @@ impl NixStore {
     };
     self.ctx.check_call()?;
     Ok(NixStorePath {
+      store: self,
       path: Path::new(path).to_path_buf(),
       _ptr: NonNull::new(path_ptr)
         .ok_or_else(|| anyhow::format_err!("store_parse_path returned null"))?
     })
   }
   
-  pub fn build(&self, path: &NixStorePath) -> Result<HashMap<String, String>, NixEvalError> {
+  pub fn build<'store>(&self, path: &NixStorePath<'store>) -> Result<HashMap<String, String>, NixEvalError> {
     let mut map = HashMap::new();
     unsafe {
       store_realise(
@@ -167,9 +166,9 @@ impl NixStore {
 
 }
 
-impl NixStorePath {
+impl<'store> NixStorePath<'store> {
 
-  pub fn from_ptr(store: &NixStore, store_path: *mut StorePath) -> Result<Self> {
+  pub fn from_ptr(store: &'store NixStore, store_path: *mut StorePath) -> Result<Self> {
     let ctx = NixContext::default();
     let mut path : Result<String> = Err(anyhow::anyhow!("Nix C API didn't return a string."));
     unsafe {
@@ -177,6 +176,7 @@ impl NixStorePath {
     };
     ctx.check_call()?;
     Ok(NixStorePath {
+      store,
       path: PathBuf::from(path?),
       _ptr: NonNull::new(store_path)
         .ok_or_else(|| anyhow::format_err!("store_real_path returned null"))?
@@ -199,15 +199,15 @@ impl NixStorePath {
   }
 }
 
-impl Drop for StoreWrapper {
+impl Drop for NixStore {
   fn drop(&mut self) {
     unsafe {
-      store_free(self.0.as_ptr());
+      store_free(self.store_ptr());
     }
   }
 }
 
-impl Drop for NixStorePath {
+impl<'store> Drop for NixStorePath<'store> {
   fn drop(&mut self) {
     unsafe {
       store_path_free(self.as_ptr());
