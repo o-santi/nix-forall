@@ -473,6 +473,15 @@ impl NixTerm {
     }
   }
 
+  pub fn get_attrs<S: AsRef<str>, P: IntoIterator<Item=S>>(self, path: P) -> NixResult<NixTerm> {
+    let mut attrset = self;
+    for attr in path {
+      attrset = attrset.get(attr.as_ref())?;
+    }
+    Ok(attrset)
+  }
+  
+
   pub fn as_bool(&self) -> NixResult<bool> {
     let NixTerm::Bool(b) = self else {
       return Err(NixEvalError::TypeError { expected: "bool".into(), got: self.get_typename() });
