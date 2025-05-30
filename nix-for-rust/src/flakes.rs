@@ -27,17 +27,17 @@ impl Drop for FetchersSettings {
   }
 }
 
-pub struct FlakeRefBuilder {
+pub struct FlakeRefSettings {
   ptr: NonNull<flake_reference_parse_flags>,
   settings: FlakeSettings,
 }
 
-impl FlakeRefBuilder {
+impl FlakeRefSettings {
   pub fn new(settings: FlakeSettings) -> Result<Self> {
     let ptr = NixContext::non_null(move |ctx| unsafe {
       flake_reference_parse_flags_new(ctx.ptr(), settings.settings_ptr.as_ptr())
     })?;
-    Ok(FlakeRefBuilder { ptr, settings })
+    Ok(FlakeRefSettings { ptr, settings })
   }
 
   pub fn set_basedir(&mut self, dir: &Path) -> Result<()> {
@@ -79,7 +79,7 @@ impl FlakeRefBuilder {
 
 pub struct FlakeRef {
   ref_ptr: NonNull<flake_reference>,
-  settings: FlakeRefBuilder,
+  pub settings: FlakeRefSettings,
   pub fragment: String,
 }
 

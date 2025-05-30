@@ -1,11 +1,11 @@
 use nix_for_rust::settings::NixSettings;
-use nix_for_rust::flakes::{FetchersSettings, FlakeLockFlags, FlakeRefBuilder, FlakeSettings};
+use nix_for_rust::flakes::{FetchersSettings, FlakeLockFlags, FlakeRefSettings, FlakeSettings};
 use nix_for_rust::term::Repr;
 
 pub fn main() -> anyhow::Result<()> {
   let mut settings = FlakeSettings::new(FetchersSettings::new()?)?;
 
-  let mut flags = FlakeRefBuilder::new(settings)?;
+  let mut flags = FlakeRefSettings::new(settings)?;
   flags.set_basedir(&std::env::current_dir()?)?;
   let flake_ref = flags.parse("..#hello.nixosConfigurations")?;
 
