@@ -5,11 +5,11 @@ use anyhow::Result;
 
 #[derive(Clone)]
 #[pyclass]
-pub struct PyNixStore(pub Arc<Mutex<NixStore>>);
+pub struct PyNixStore(pub Arc<Mutex<&'static NixStore>>);
 unsafe impl Send for PyNixStore {}
 
 impl PyNixStore {
-  fn lock(&self) -> MutexGuard<'_, NixStore> {
+  fn lock(&self) -> MutexGuard<'_, &'static NixStore> {
     self.0.lock().expect("Another thread panic'd while holding the lock")
   }
 }

@@ -9,14 +9,14 @@ use crate::nix_term_to_py;
 
 #[pyclass(frozen)]
 #[derive(Clone)]
-pub struct PyNixAttrSet(pub Arc<Mutex<NixAttrSet>>);
+pub struct PyNixAttrSet(pub Arc<Mutex<NixAttrSet<'static>>>);
 #[pyclass]
-pub struct PyNixNamesIterator(Mutex<NixNamesIterator>);
+pub struct PyNixNamesIterator(Mutex<NixNamesIterator<'static, 'static>>);
 #[pyclass]
-pub struct PyNixItemsIterator(Mutex<NixItemsIterator>);
+pub struct PyNixItemsIterator(Mutex<NixItemsIterator<'static, 'static>>);
 
 #[pyclass]
-pub struct PyNixRealisedString(Mutex<NixRealisedString>);
+pub struct PyNixRealisedString(Mutex<NixRealisedString<'static>>);
 
 // Safety: we can only access the rawpointers through the Mutex,
 // which means that only one thread will have access to each at a time
@@ -26,7 +26,7 @@ unsafe impl Send for PyNixItemsIterator {}
 unsafe impl Send for PyNixRealisedString {}
 
 impl PyNixAttrSet {
-  pub fn lock(&self) -> MutexGuard<'_, NixAttrSet> {
+  pub fn lock(&self) -> MutexGuard<'_, NixAttrSet<'static>> {
     self.0.lock().expect("Another thread panic'd while holding the lock")
   }
 }
@@ -53,7 +53,8 @@ impl PyNixAttrSet {
 
   fn __iter__(&self) -> Result<PyNixNamesIterator> {
     let attrset = self.lock();
-    let names_iter = attrset.names()?;
+    let leaked = Box::leak(Box::new(attrset.clone()));
+    let names_iter = leaked.names()?;
     Ok(PyNixNamesIterator(Mutex::new(names_iter)))
   }
 
@@ -69,7 +70,8 @@ impl PyNixAttrSet {
 
   fn items(&self) -> Result<PyNixItemsIterator> {
     let attrset = self.lock();
-    let items_iter = attrset.items()?;
+    let leaked = Box::leak(Box::new(attrset.clone()));
+    let items_iter = leaked.items()?;
     Ok(PyNixItemsIterator(Mutex::new(items_iter)))
   }
 
@@ -122,7 +124,7 @@ impl PyNixItemsIterator {
 }
 
 impl PyNixRealisedString {
-  pub fn lock(&self) -> MutexGuard<'_, NixRealisedString> {
+  pub fn lock(&self) -> MutexGuard<'_, NixRealisedString<'static>> {
     self.0.lock().expect("Another thread panic'd while holding the lock")
   }
 }

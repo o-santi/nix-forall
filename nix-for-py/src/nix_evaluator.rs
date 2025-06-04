@@ -5,14 +5,14 @@ use crate::{nix_term_to_py, store::PyNixStore};
 
 #[derive(Clone)]
 #[pyclass]
-pub struct PyEvalState(pub Arc<Mutex<NixEvalState>>);
+pub struct PyEvalState(pub Arc<Mutex<&'static NixEvalState>>);
 
 // Safety: we can only access the rawpointers through the Mutex,
 // which means that only one thread will have access to each at a time
 unsafe impl Send for PyEvalState {}
 
 impl PyEvalState {
-  fn lock(&self) -> MutexGuard<'_, NixEvalState> {
+  fn lock(&self) -> MutexGuard<'_, &'static NixEvalState> {
     self.0.lock().expect("Another thread panic'd while holding the lock")
   }
 }
@@ -22,7 +22,7 @@ impl PyEvalState {
 
   #[getter]
   pub fn store(&self) -> anyhow::Result<PyNixStore> {
-    Ok(PyNixStore(Arc::new(Mutex::new(self.lock().store.clone()))))
+    Ok(PyNixStore(Arc::new(Mutex::new(&self.lock().store))))
   }
 
   #[pyo3(signature=(string, cwd=None))]
@@ -36,10 +36,10 @@ impl PyEvalState {
     nix_term_to_py(py, term)
   }
 
-  pub fn eval_flake(&self, py:Python<'_>, flake_path: &str) -> anyhow::Result<PyObject> {
-    let term = self.lock().eval_flake(flake_path)?;
-    nix_term_to_py(py, term)
-  }
+  // pub fn eval_flake(&self, py:Python<'_>, flake_path: &str) -> anyhow::Result<PyObject> {
+  //   let term = self.lock().eval_flake(flake_path)?;
+  //   nix_term_to_py(py, term)
+  // }
 
   pub fn get_setting(&self, key: &str) -> Option<String> {
     self.lock().settings.get_setting(key)

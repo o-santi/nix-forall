@@ -8,13 +8,13 @@ use crate::{nix_term_to_py, PyTerm};
 
 #[pyclass(frozen)]
 #[derive(Clone)]
-pub struct PyNixFunction(pub Arc<Mutex<NixFunction>>);
+pub struct PyNixFunction(pub Arc<Mutex<NixFunction<'static>>>);
 // Safety: we can only access the rawpointers through the Mutex,
 // which means that only one thread will have access to each at a time
 unsafe impl Send for PyNixFunction {}
 
 impl PyNixFunction {
-  pub fn lock(&self) -> MutexGuard<'_, NixFunction> {
+  pub fn lock(&self) -> MutexGuard<'_, NixFunction<'static>> {
     self.0.lock().expect("Another thread panic'd while holding the mutex!")
   }
 }

@@ -13,7 +13,7 @@ use pyo3::{prelude::*, types::{PyList, PyDict}};
 use nix_for_rust::{eval::NixEvalState, settings::NixSettings, term::{CollectToNix, NixAttrSet, NixEvalError, NixList, NixTerm, ToNix}};
 use nix_for_rust::term::NixResult;
 
-fn nix_term_to_py(py: Python, term: NixTerm) -> anyhow::Result<PyObject> {
+fn nix_term_to_py(py: Python, term: NixTerm<'static>) -> anyhow::Result<PyObject> {
   match term {
     NixTerm::Null => Ok(py.None()),
     NixTerm::String(s) => Ok(s.into_py(py)),
@@ -31,8 +31,8 @@ fn nix_term_to_py(py: Python, term: NixTerm) -> anyhow::Result<PyObject> {
 
 struct PyTerm<'gil>(Bound<'gil, PyAny>);
 
-impl<'gil> ToNix for PyTerm<'gil> {
-  fn to_nix(self, eval_state: &NixEvalState) -> NixResult<NixTerm> {
+impl<'gil> ToNix<'static> for PyTerm<'gil> {
+  fn to_nix(self, eval_state: &'static NixEvalState) -> NixResult<NixTerm<'static>> {
     let obj = self.0;
     if obj.is_none() {
       Ok(NixTerm::Null)
@@ -101,16 +101,17 @@ mod nix_for_py {
       settings: settings.unwrap_or_default(),
       store_params: store_params.unwrap_or_default(),
       lookup_path: lookup_path.unwrap_or_default(),
-      stack_size: stack_size.unwrap_or(64 * 1024 * 1024)
+      stack_size: stack_size.unwrap_or(64 * 1024 * 1024),
+      flake_settings: None
     };
     let eval_state = nix_settings.with_store(store)?;
-    Ok(PyEvalState(Arc::new(Mutex::new(eval_state))))
+    Ok(PyEvalState(Arc::new(Mutex::new(Box::leak(Box::new(eval_state))))))
   }
 
   #[pyfunction]
   #[pyo3(signature = (uri, **params))]
   fn store_open(uri: &str, params: Option<HashMap<String, String>>) -> anyhow::Result<PyNixStore> {
     let store = NixStore::new(NixContext::default(), uri, params.unwrap_or_default())?;
-    Ok(PyNixStore(Arc::new(Mutex::new(store))))
+    Ok(PyNixStore(Arc::new(Mutex::new(Box::leak(Box::new(store))))))
   }
 }

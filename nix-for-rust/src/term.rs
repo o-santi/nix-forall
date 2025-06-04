@@ -195,7 +195,7 @@ impl<'state> NixAttrSet<'state> {
   /// Tries to build an attribute set as if it was a derivation.
   /// 
   /// Throws [`NotADerivation`][NixEvalError] if the attrset is not a derivation
-  pub fn realise(&self) -> anyhow::Result<NixRealisedString> {
+  pub fn realise(&self) -> anyhow::Result<NixRealisedString<'state>> {
     let ctx = self.0._state.store.ctx.ptr();
     let realised_string = unsafe {
       string_realise(ctx, self.0._state.state_ptr(), self.0.value.as_ptr(), false)
@@ -324,7 +324,7 @@ impl<'state> NixList<'state> {
   }
 
   /// Returns the element at idx `idx` or throws an `IndexOutOfBounds` error.
-  pub fn get_idx(&self, idx: u32) -> NixResult<NixTerm> {
+  pub fn get_idx(&self, idx: u32) -> NixResult<NixTerm<'state>> {
     let raw = &self.0;
     let size = self.len()?;
     if idx > size -1 {

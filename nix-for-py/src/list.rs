@@ -1,14 +1,14 @@
 use std::sync::{Arc, Mutex, MutexGuard};
-use pyo3::{exceptions::PyIndexError, prelude::*};
+use pyo3::prelude::*;
 use nix_for_rust::term::{NixList, NixListIterator, Repr};
 use anyhow::Result;
 use crate::nix_term_to_py;
 
 #[pyclass(frozen)]
 #[derive(Clone)]
-pub struct PyNixList(pub Arc<Mutex<NixList>>);
+pub struct PyNixList(pub Arc<Mutex<NixList<'static>>>);
 #[pyclass]
-pub struct PyNixListIterator(Mutex<NixListIterator>);
+pub struct PyNixListIterator(Mutex<NixListIterator<'static, 'static>>);
 
 // Safety: we can only access the rawpointers through the Mutex,
 // which means that only one thread will have access to each at a time
@@ -16,7 +16,7 @@ unsafe impl Send for PyNixList {}
 unsafe impl Send for PyNixListIterator {}
 
 impl PyNixList {
-  pub fn lock(&self) -> MutexGuard<'_, NixList> {
+  pub fn lock(&self) -> MutexGuard<'_, NixList<'static>> {
     self.0.lock().expect("Another thread panic'd while holding the mutex!")
   }
 }
@@ -32,7 +32,8 @@ impl PyNixList {
 
   fn __iter__(&self) -> Result<PyNixListIterator> {
     let list = self.lock();
-    let list_iter = list.iter()?;
+    let leaked = Box::leak(Box::new(list.clone()));
+    let list_iter = leaked.iter()?;
     Ok(PyNixListIterator(Mutex::new(list_iter)))
   }
 
@@ -44,13 +45,13 @@ impl PyNixList {
 
   fn __getitem__(&self, py: Python, item: u32) -> Result<PyObject> {
     let list = self.lock();
-    let item = list.get_idx(item).map_err(|_| PyIndexError::new_err(item))?;
+    let item = list.get_idx(item)?;
     nix_term_to_py(py, item)
   }
 }
 
 impl PyNixListIterator {
-  fn lock(&self) -> Result<MutexGuard<'_, NixListIterator>> {
+  fn lock(&self) -> Result<MutexGuard<'_, NixListIterator<'static, 'static>>> {
     self.0.lock().map_err(|e| anyhow::format_err!("{e}"))
   }
 }
