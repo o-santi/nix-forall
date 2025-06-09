@@ -27,7 +27,9 @@ pub enum NixEvalError {
   #[error("Nix returned invalid string")]
   InvalidString,
   #[error("Invalid path '{0}'")]
-  InvalidPath(String)
+  InvalidPath(String),
+  #[error("Empty attribute path")]
+  AttrPathEmpty,
 }
 
 pub type NixResult<T> = Result<T, NixEvalError>;
@@ -456,7 +458,7 @@ impl<'state> NixTerm<'state> {
     rawval
   }
   
-  pub fn call_with<T: ToNix<'state>>(self, arg: T) -> NixResult<NixTerm<'state>> {
+  pub fn call_with<T: ToNix<'state>>(&self, arg: T) -> NixResult<NixTerm<'state>> {
     if let NixTerm::Function(func) = self {
       func.call_with(arg)
     } else {
@@ -472,12 +474,17 @@ impl<'state> NixTerm<'state> {
     }
   }
 
-  pub fn get_attrs<S: AsRef<str>, P: IntoIterator<Item=S>>(self, path: P) -> NixResult<NixTerm<'state>> {
-    let mut attrset = self;
-    for attr in path {
-      attrset = attrset.get(attr.as_ref())?;
+  pub fn get_attrs<S: AsRef<str>, P: IntoIterator<Item=S>>(&self, path: P) -> NixResult<NixTerm<'state>> {
+    let mut path = path.into_iter();
+    if let Some(p) = path.next() {
+      let mut attrset = self.get(p.as_ref())?;
+      for attr in path {
+        attrset = attrset.get(attr.as_ref())?;
+      }
+      Ok(attrset)
+    } else {
+      Err(NixEvalError::AttrPathEmpty)
     }
-    Ok(attrset)
   }
   
 
