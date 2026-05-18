@@ -116,12 +116,23 @@ pub fn hash_files(files: &[PathBuf]) -> Result<blake3::Hash> {
   let mut files = files.to_vec();
   files.sort();
   for file in files {
-    if file.is_dir() {
-      for entry in std::fs::read_dir(file)? {
+    // metadata() follows symlinks, matching the previous file.is_dir() check.
+    // A vanished/unreadable path has nothing stable to hash; skip it.
+    let md = match std::fs::metadata(&file) {
+      Ok(md) => md,
+      Err(_) => continue,
+    };
+    if md.is_dir() {
+      for entry in std::fs::read_dir(&file)? {
         hasher.update(entry?.path().as_os_str().as_encoded_bytes());
       }
-    } else {
+    } else if md.is_file() {
       hasher.update_mmap(&file)?;
+    } else {
+      // Non-regular file (character/block device, fifo, socket). Never stream
+      // its contents: e.g. /dev/urandom is infinite and would spin forever.
+      // Fold only the path so the cache key still varies with the input set.
+      hasher.update(file.as_os_str().as_encoded_bytes());
     }
   }
   Ok(hasher.finalize())

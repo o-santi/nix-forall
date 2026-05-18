@@ -79,8 +79,14 @@ impl FileTracer {
     // /nix/var -> ephemeral, does not change results of evaluation.
     let is_nix = path.starts_with("/nix");
     let is_git_cache = self.home_cache_dir.as_ref().map(|h| path.starts_with(h)).unwrap_or(true);
-    let is_in_proc = path.starts_with("/proc"); 
-    !is_nix && !is_in_proc && !is_git_cache
+    let is_in_proc = path.starts_with("/proc");
+    // /dev/* is never a meaningful cache-invalidation input. In particular the
+    // evaluator seeds its RNG from /dev/urandom during normal startup; recording
+    // that path makes hash_files() stream an infinite character device forever
+    // (100% CPU, never terminates). Devices, fifos and sockets can never be a
+    // reproducible build input, so never track anything under /dev.
+    let is_dev = path.starts_with("/dev");
+    !is_nix && !is_in_proc && !is_git_cache && !is_dev
   }
 
   fn handle_access(&mut self, access: FileAccess) {
